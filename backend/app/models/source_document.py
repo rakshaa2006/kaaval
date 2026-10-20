@@ -4,14 +4,18 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
+from app.db.base import Base, utc_now
 
 
 class SourceDocument(Base):
     __tablename__ = "source_documents"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "fixture_key", name="uq_source_documents_org_fixture"),
+        Index("ix_source_documents_organization_created_at", "organization_id", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
@@ -27,7 +31,7 @@ class SourceDocument(Base):
     trust_level: Mapped[str] = mapped_column(String(50), nullable=False, default="UNTRUSTED")
     is_synthetic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
 
     # Relationships
     organization: Mapped["Organization"] = relationship(back_populates="source_documents")
