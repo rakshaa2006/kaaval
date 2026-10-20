@@ -92,11 +92,17 @@ backend/
     db/              — SQLite engine and session factory
     services/        — Reserved for future service code
     policy/          — Reserved for future policy code
-    tools/           — Reserved for future tool adapters
+    tools/           — Internal mock tool registry; no public tool endpoints
     audit/           — Append-only audit event persistence
     integrations/    — Reserved for future integration adapters
     attack_lab/      — Reserved for future simulation code
   tests/             — pytest health, schema, relationship, and scope tests
 ```
 
-No email, file deletion, customer data, messaging credentials, or external LLM integration is configured or implemented.
+The internal mock tool registry exposes lookup and execution through
+`app.tools`, but no tool is callable through an HTTP endpoint. `read_invoice`
+reads only the synthetic invoice fixtures; `send_email` and `delete_backup`
+return simulated results without network or filesystem side effects.
+
+No real email, file deletion, customer data, messaging credentials, or external
+LLM integration is configured or implemented.
