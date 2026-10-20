@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     # ── Database ──────────────────────────────────────────────────────────────
     database_url: str = "sqlite:///./kaaval.db"
     session_expire_hours: int = Field(default=8, gt=0)
+    passport_expire_hours: int = Field(default=24, gt=0)
 
 
 @lru_cache
