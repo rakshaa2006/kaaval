@@ -39,6 +39,11 @@ The API will be available at http://localhost:8000
 - Password authentication: `POST /api/auth/login`
 - Current user: `GET /api/auth/me`
 - Logout: `POST /api/auth/logout`
+- Tasks: `POST /api/tasks`, `GET /api/tasks/{task_id}`
+- Task Passports: `POST /api/tasks/{task_id}/passport/generate`,
+  `GET /api/tasks/{task_id}/passport`,
+  `POST /api/tasks/{task_id}/passport/activate`, and
+  `POST /api/tasks/{task_id}/passport/regenerate`
 - API docs: http://localhost:8000/docs
 
 ## Running Tests
@@ -71,6 +76,7 @@ See `.env.example` for all supported variables with descriptions.
 | `APP_ENV` | `SYNTHETIC_DEMO` | Runtime environment |
 | `DATABASE_URL` | `sqlite:///./kaaval.db` | Database connection URL |
 | `SESSION_EXPIRE_HOURS` | `8` | Browser session lifetime |
+| `PASSPORT_EXPIRE_HOURS` | `24` | Generated Task Passport lifetime |
 
 ## Project Structure
 
