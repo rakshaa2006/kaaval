@@ -5,14 +5,32 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
+from app.db.base import Base, utc_now
 
 
 class TaskPassport(Base):
     __tablename__ = "task_passports"
+    __table_args__ = (
+        CheckConstraint(
+            "activation_status IN ('DRAFT', 'ACTIVE', 'SUPERSEDED', 'EXPIRED', 'CANCELLED')",
+            name="ck_task_passports_activation_status",
+        ),
+        UniqueConstraint("task_id", "version", name="uq_task_passports_task_version"),
+        Index("ix_task_passports_organization_created_at", "organization_id", "created_at"),
+        Index("ix_task_passports_task_activation", "task_id", "activation_status"),
+    )
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
@@ -37,22 +55,22 @@ class TaskPassport(Base):
     forbidden_tools_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     approval_rules_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     data_constraints_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
-    # Optional model/provider metadata from LLM generation
-    model_metadata_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    generation_metadata_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     purpose: Mapped[str] = mapped_column(Text, nullable=False)
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     activated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
 
     # Relationships
     task: Mapped["Task"] = relationship(back_populates="passports")
+    organization: Mapped["Organization"] = relationship()
     agent_sessions: Mapped[list["AgentSession"]] = relationship(back_populates="passport")
 
     @property
     def is_active_and_valid(self) -> bool:
         if self.activation_status != "ACTIVE":
             return False
-        if self.expires_at and datetime.utcnow() > self.expires_at:
+        if self.expires_at and utc_now() > self.expires_at:
             return False
         return True
 
