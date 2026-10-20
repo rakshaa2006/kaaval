@@ -5,6 +5,8 @@ by changing the DATABASE_URL environment variable.
 """
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -13,6 +15,11 @@ from app.config import get_settings
 
 class Base(DeclarativeBase):
     """Shared declarative base for all ORM models."""
+
+
+def utc_now() -> datetime:
+    """Return a naive UTC timestamp compatible with SQLite DateTime columns."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _get_engine():
@@ -55,6 +62,7 @@ def create_tables() -> None:
     """Create all tables defined by ORM models (idempotent)."""
     # Import all model modules so SQLAlchemy registers their metadata
     import app.models  # noqa: F401
+    import app.audit.service  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
 
