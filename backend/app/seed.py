@@ -1,10 +1,8 @@
 """Seed the local synthetic organization, owner, and invoice fixtures."""
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.config import AppEnv, get_settings
 from app.db.base import SessionLocal, create_tables
+from app.auth.security import hash_password
 from app.models import Organization, SourceDocument, User
 
 
@@ -28,14 +27,6 @@ class SeedResult:
     organization_id: str
     owner_id: str
     fixture_keys: tuple[str, ...]
-
-
-def _hash_demo_password(password: str) -> str:
-    salt = os.urandom(16)
-    digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2**14, r=8, p=1)
-    salt_text = base64.urlsafe_b64encode(salt).decode("ascii")
-    digest_text = base64.urlsafe_b64encode(digest).decode("ascii")
-    return f"scrypt$16384$8$1${salt_text}${digest_text}"
 
 
 def _load_fixture(fixture_directory: Path, fixture_key: str) -> tuple[bytes, dict[str, object]]:
@@ -84,7 +75,7 @@ def seed_synthetic_data(
         owner = User(
             organization_id=organization.id,
             email=DEMO_OWNER_EMAIL,
-            password_hash=_hash_demo_password(DEMO_OWNER_PASSWORD),
+            password_hash=hash_password(DEMO_OWNER_PASSWORD),
             role="OWNER_ADMIN",
             status="ACTIVE",
             is_active=True,
