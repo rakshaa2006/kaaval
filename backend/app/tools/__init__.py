@@ -1,4 +1,21 @@
-"""Reserved package for future synthetic tool adapters.
+"""Internal mock tool registry; no tools are exposed as HTTP endpoints."""
 
-No tools or external actions are implemented.
-"""
+from app.tools.registry import (
+    ToolDefinition,
+    ToolRegistryError,
+    ToolResult,
+    UnknownToolError,
+    execute_tool,
+    list_tools,
+    lookup_tool,
+)
+
+__all__ = [
+    "ToolDefinition",
+    "ToolRegistryError",
+    "ToolResult",
+    "UnknownToolError",
+    "execute_tool",
+    "list_tools",
+    "lookup_tool",
+]
