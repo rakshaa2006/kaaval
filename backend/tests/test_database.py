@@ -4,11 +4,12 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import delete, inspect, select, text, update
+from sqlalchemy import create_engine, delete, inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit.service import append_audit_event
+from app.db.base import upgrade_sqlite_schema
 from app.models import (
     ActionRequest,
     AgentSession,
@@ -75,6 +76,35 @@ def test_create_schema_includes_all_core_entities(engine) -> None:
 def test_sqlite_foreign_keys_are_enabled(engine) -> None:
     with engine.connect() as connection:
         assert connection.execute(text("PRAGMA foreign_keys")).scalar_one() == 1
+
+
+def test_sqlite_upgrade_adds_missing_user_status_without_losing_data() -> None:
+    legacy_engine = create_engine("sqlite:///:memory:")
+    try:
+        with legacy_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "CREATE TABLE users (id VARCHAR(36) PRIMARY KEY, "
+                    "email VARCHAR(320) NOT NULL)"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, email) "
+                    "VALUES ('synthetic-user-id', 'legacy@example.test')"
+                )
+            )
+
+        upgrade_sqlite_schema(legacy_engine)
+        upgrade_sqlite_schema(legacy_engine)
+
+        with legacy_engine.connect() as connection:
+            user = connection.execute(
+                text("SELECT id, email, status FROM users")
+            ).one()
+            assert user == ("synthetic-user-id", "legacy@example.test", "ACTIVE")
+    finally:
+        legacy_engine.dispose()
 
 
 def test_lifecycle_states_reject_contradictory_values(db_session: Session) -> None:
