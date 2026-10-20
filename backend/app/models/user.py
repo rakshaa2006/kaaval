@@ -21,7 +21,7 @@ class User(Base):
         String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
     )
     email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True)
-    # bcrypt hash — never store plaintext
+    # Salted scrypt hash — never store plaintext
     password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     # V1 only role: OWNER_ADMIN
     role: Mapped[str] = mapped_column(String(50), nullable=False, default="OWNER_ADMIN")
