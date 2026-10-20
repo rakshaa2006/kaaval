@@ -8,12 +8,14 @@ from __future__ import annotations
 from enum import Enum
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AppEnv(str, Enum):
     SYNTHETIC_DEMO = "SYNTHETIC_DEMO"
     STAGING = "STAGING"
+    PRODUCTION = "PRODUCTION"
 
 
 class Settings(BaseSettings):
@@ -29,6 +31,7 @@ class Settings(BaseSettings):
 
     # ── Database ──────────────────────────────────────────────────────────────
     database_url: str = "sqlite:///./kaaval.db"
+    session_expire_hours: int = Field(default=8, gt=0)
 
 
 @lru_cache
