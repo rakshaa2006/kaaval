@@ -18,6 +18,7 @@ from app.models.notification import Notification
 from app.models.incident import Incident
 from app.models.audit_event import AuditEvent
 from app.models.attack_run import AttackRun
+from app.models.attack_case import AttackCase
 
 __all__ = [
     "Organization",
@@ -35,4 +36,5 @@ __all__ = [
     "Incident",
     "AuditEvent",
     "AttackRun",
+    "AttackCase",
 ]
