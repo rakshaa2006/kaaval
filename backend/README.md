@@ -35,6 +35,10 @@ The API will be available at http://localhost:8000
 
 - Liveness: http://localhost:8000/api/health
 - Readiness (checks SQLite connectivity): http://localhost:8000/api/ready
+- Demo authentication: `POST /api/auth/demo-login` (synthetic mode only)
+- Password authentication: `POST /api/auth/login`
+- Current user: `GET /api/auth/me`
+- Logout: `POST /api/auth/logout`
 - API docs: http://localhost:8000/docs
 
 ## Running Tests
@@ -53,6 +57,11 @@ The local seed command creates `owner@example.test` with the demo-only password
 SQLite; the database stores only a salted scrypt hash, never the plaintext
 password. Do not use this demo password outside local synthetic development.
 
+Login responses set an HttpOnly `kaaval_session` cookie. The database stores
+only a SHA-256 hash of the opaque session token; sessions expire after the
+configured lifetime and logout revokes the active session. Bearer tokens are
+also accepted for API clients.
+
 ## Environment Variables
 
 See `.env.example` for all supported variables with descriptions.
@@ -61,6 +70,7 @@ See `.env.example` for all supported variables with descriptions.
 |---|---|---|
 | `APP_ENV` | `SYNTHETIC_DEMO` | Runtime environment |
 | `DATABASE_URL` | `sqlite:///./kaaval.db` | Database connection URL |
+| `SESSION_EXPIRE_HOURS` | `8` | Browser session lifetime |
 
 ## Project Structure
 
@@ -69,8 +79,8 @@ backend/
   app/
     main.py          — FastAPI application factory
     config.py        — Pydantic settings
-    api/             — Health and readiness routes
-    auth/            — Reserved for future authentication code
+    api/             — Health, readiness, and authentication routes
+    auth/            — Password hashing and browser-session helpers
     models/          — SQLAlchemy model definitions
     schemas/         — Pydantic schemas
     db/              — SQLite engine and session factory
