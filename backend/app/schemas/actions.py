@@ -7,6 +7,8 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.privacy import FindingType
+
 
 DecisionOutcome = Literal[
     "ALLOW",
@@ -26,9 +28,10 @@ class ActionCreateRequest(BaseModel):
 
 
 class ActionFindingResponse(BaseModel):
-    category: str
+    category: FindingType
     masked_value: str
     location_hint: str | None
+    confidence: float | None = None
 
 
 class ActionDecisionResponse(BaseModel):

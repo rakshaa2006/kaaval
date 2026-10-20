@@ -5,6 +5,8 @@ Enforcement Gateway can call ``execute_tool`` after authorizing a request.
 """
 from __future__ import annotations
 
+import hashlib
+
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -92,6 +94,10 @@ class _Invoice(BaseModel):
     currency: Literal["INR"]
     description: str
     untrusted_instruction: str | None = None
+    customer_email: str | None = None
+    customer_phone: str | None = None
+    customer_government_id: str | None = None
+    customer_list: list[str] | None = None
 
 
 class _InvoiceFixture(BaseModel):
@@ -121,6 +127,44 @@ def _read_invoice(arguments: BaseModel) -> dict[str, object]:
         "trust_level": fixture.meta.trust_level,
         "invoice": fixture.invoice.model_dump(exclude_none=True),
     }
+
+
+def inspect_invoice_fixture(
+    fixture_key: str, expected_content_hash: str
+) -> tuple[tuple[str, str], ...]:
+    """Read only a validated fixture for privacy scanning, without executing a tool."""
+    filename = _FIXTURE_FILENAMES.get(fixture_key)
+    if filename is None:
+        raise SyntheticFixtureError("The source fixture is not allowlisted.")
+    try:
+        content_bytes = (_FIXTURE_DIRECTORY / filename).read_bytes()
+    except OSError as exc:
+        raise SyntheticFixtureError("The synthetic source fixture is unavailable.") from exc
+    if hashlib.sha256(content_bytes).hexdigest() != expected_content_hash:
+        raise SyntheticFixtureError("The synthetic source fixture integrity check failed.")
+    content = content_bytes.decode("utf-8")
+    fixture = _InvoiceFixture.model_validate_json(content)
+    if fixture.meta.fixture_key != fixture_key or fixture.meta.is_synthetic is not True:
+        raise SyntheticFixtureError("The source fixture failed synthetic validation.")
+
+    def collect(value: object, location: str) -> list[tuple[str, str]]:
+        if isinstance(value, dict):
+            return [
+                item
+                for key, child in value.items()
+                for item in collect(child, f"{location}.{key}")
+            ]
+        if isinstance(value, list):
+            return [
+                item
+                for index, child in enumerate(value)
+                for item in collect(child, f"{location}[{index}]")
+            ]
+        if isinstance(value, str):
+            return [(location, value)]
+        return []
+
+    return tuple(collect(fixture.model_dump(by_alias=True), "source_document"))
 
 
 def _simulate_email(arguments: BaseModel) -> dict[str, object]:

@@ -28,8 +28,7 @@ class DataFinding(Base):
     organization_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    # Finding categories: CUSTOMER_EMAIL | PHONE_NUMBER | GOVERNMENT_ID_LIKE
-    #                     | CUSTOMER_LIST | PROMPT_INJECTION
+    # Finding categories include privacy risks and unsafe action requests.
     category: Mapped[str] = mapped_column(String(50), nullable=False)
     # Masked representation only: e.g. "r***@example.test", "XXXXXX1234"
     masked_value: Mapped[str] = mapped_column(String(500), nullable=False)

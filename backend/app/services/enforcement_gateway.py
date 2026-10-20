@@ -5,7 +5,6 @@ import json
 import re
 from dataclasses import dataclass, field
 from typing import Literal
-from uuid import UUID
 
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
@@ -24,6 +23,12 @@ from app.models import (
     Task,
     TaskPassport,
 )
+from app.services.incident_service import quarantine_session_for_action
+from app.services.passport_compiler import passport_permissions_are_valid
+from app.services.privacy_inspector import (
+    PrivacyFinding,
+    inspect_action_context,
+)
 from app.schemas.actions import (
     ActionCreateRequest,
     ActionDecisionResponse,
@@ -37,6 +42,7 @@ from app.tools import (
     execute_tool,
     lookup_tool,
 )
+from app.tools.registry import SyntheticFixtureError, inspect_invoice_fixture
 
 _EMAIL_PATTERN = re.compile(
     r"\b[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@"
@@ -44,6 +50,7 @@ _EMAIL_PATTERN = re.compile(
     r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+\b"
 )
 _PHONE_PATTERN = re.compile(r"(?<!\d)(?:\+?\d[\s().-]*){10,15}(?!\d)")
+_GOVERNMENT_ID_PATTERN = re.compile(r"(?<!\d)(?:\d[\s-]?){11}\d(?!\d)")
 _CREDENTIAL_PATTERN = re.compile(
     r"(?i)\b(password|token|secret|api[_ ]key)\s*[:=]\s*\S+"
 )
@@ -60,6 +67,8 @@ _SENSITIVE_KEYS = (
     "body",
     "message",
     "content",
+    "customer",
+    "government_id",
 )
 _OUTCOME_EVENT = {
     "ALLOW": "ACTION_ALLOWED",
@@ -77,6 +86,7 @@ class _Evaluation:
     source_document: SourceDocument | None = None
     validated_arguments: BaseModel | None = None
     findings: list[DataFinding] = field(default_factory=list)
+    quarantine: bool = False
 
 
 def _mask_email(value: str) -> str:
@@ -97,18 +107,15 @@ def _sanitize(value: object, key: str = "") -> object:
         return [_sanitize(item) for item in value]
     if isinstance(value, str):
         masked = _EMAIL_PATTERN.sub(lambda match: _mask_email(match.group(0)), value)
+        masked = _GOVERNMENT_ID_PATTERN.sub("[REDACTED_ID]", masked)
         masked = _PHONE_PATTERN.sub("[REDACTED_PHONE]", masked)
         return _CREDENTIAL_PATTERN.sub(r"\1=[REDACTED]", masked)
     return value
 
 
-def _masked_email_destination(value: str | None) -> str | None:
-    if value is None:
-        return None
-    return _EMAIL_PATTERN.sub(lambda match: _mask_email(match.group(0)), value)
-
-
-def _permission_lists(passport: TaskPassport) -> tuple[list[str], list[str], list[str]] | None:
+def _permission_lists(
+    passport: TaskPassport,
+) -> tuple[list[str], list[str], list[str]] | None:
     try:
         allowed = json.loads(passport.allowed_tools_json)
         forbidden = json.loads(passport.forbidden_tools_json)
@@ -149,10 +156,17 @@ def _find_source_document(
     db: Session,
     organization_id: str,
     request: ActionCreateRequest,
-    arguments: BaseModel,
+    arguments: BaseModel | dict[str, object],
 ) -> SourceDocument | None:
-    fixture_key = getattr(arguments, "fixture_key", None)
+    if isinstance(arguments, dict):
+        fixture_key = arguments.get("fixture_key")
+    else:
+        fixture_key = getattr(arguments, "fixture_key", None)
+    if request.tool_name == "read_invoice" and fixture_key is None:
+        fixture_key = "supplier-invoice-clean"
     if fixture_key is not None:
+        if not isinstance(fixture_key, str):
+            return None
         document = db.scalar(
             select(SourceDocument).where(
                 SourceDocument.organization_id == organization_id,
@@ -176,15 +190,55 @@ def _find_source_document(
     )
 
 
+def _finding_records(
+    organization_id: str,
+    inspection_findings: tuple[PrivacyFinding, ...],
+) -> list[DataFinding]:
+    priority = {
+        "PROMPT_INJECTION": 0,
+        "EXTERNAL_DATA_EXPOSURE": 1,
+        "DESTRUCTIVE_ACTION_REQUEST": 2,
+        "CUSTOMER_EMAIL": 3,
+        "PHONE_NUMBER": 4,
+        "GOVERNMENT_ID_LIKE": 5,
+        "CUSTOMER_LIST": 6,
+    }
+    return [
+        DataFinding(
+            organization_id=organization_id,
+            category=finding.category,
+            masked_value=finding.masked_value,
+            location_hint=finding.location_hint,
+            confidence=finding.confidence,
+            detector="deterministic_privacy_inspector",
+            recommended_action="BLOCK"
+            if finding.category
+            in ("EXTERNAL_DATA_EXPOSURE", "DESTRUCTIVE_ACTION_REQUEST")
+            else "REVIEW",
+        )
+        for finding in sorted(
+            inspection_findings, key=lambda finding: priority[finding.category]
+        )
+    ]
+
+
 def _evaluate_action(
     db: Session,
     principal: AuthenticatedUser,
     request: ActionCreateRequest,
     session: AgentSession,
-    task: Task,
+    task: Task | None,
     passport: TaskPassport | None,
 ) -> _Evaluation:
-    if task.organization_id != principal.organization_id or task.owner_id != principal.user.id:
+    if task is None:
+        return _Evaluation(
+            "BLOCKED_FAIL_CLOSED", "TASK_CONTEXT_MISSING",
+            "Task safety context could not be verified.",
+        )
+    if (
+        task.organization_id != principal.organization_id
+        or task.owner_id != principal.user.id
+    ):
         return _Evaluation(
             "BLOCKED_FAIL_CLOSED", "TASK_SCOPE_MISMATCH",
             "Task ownership could not be verified.",
@@ -228,7 +282,11 @@ def _evaluate_action(
             "BLOCKED_FAIL_CLOSED", "PASSPORT_NOT_ACTIVE",
             "Task Passport is not active.",
         )
-    if passport.generation_status != "GENERATED" or not _data_policy_is_valid(passport):
+    if (
+        passport.generation_status != "GENERATED"
+        or not _data_policy_is_valid(passport)
+        or not passport_permissions_are_valid(passport)
+    ):
         return _Evaluation(
             "BLOCKED_FAIL_CLOSED", "PASSPORT_POLICY_INVALID",
             "Task Passport safety constraints could not be verified.",
@@ -250,61 +308,105 @@ def _evaluate_action(
             "Tool is not registered.",
         )
 
+    permissions = _permission_lists(passport)
+    if permissions is None:
+        return _Evaluation(
+            "BLOCKED_FAIL_CLOSED", "INVALID_PASSPORT_PERMISSIONS",
+            "Task Passport permissions could not be verified.",
+        )
+
+    source_document = _find_source_document(
+        db, principal.organization_id, request, request.arguments
+    )
+    if (
+        source_document is None
+        and (
+            request.tool_name == "read_invoice"
+            or request.source_document_id is not None
+        )
+    ):
+        return _Evaluation(
+            "BLOCKED_FAIL_CLOSED", "SOURCE_CONTEXT_MISSING",
+            "A matching synthetic source document is required.",
+        )
+    if source_document is not None and source_document.trust_level not in (
+        "TRUSTED",
+        "UNTRUSTED",
+    ):
+        return _Evaluation(
+            "BLOCKED_FAIL_CLOSED", "SOURCE_TRUST_UNAVAILABLE",
+            "Source document trust could not be verified.",
+            source_document=source_document,
+        )
+    try:
+        source_values = (
+            inspect_invoice_fixture(
+                source_document.fixture_key, source_document.content_hash
+            )
+            if source_document is not None
+            else ()
+        )
+    except (SyntheticFixtureError, ValidationError, UnicodeDecodeError):
+        return _Evaluation(
+            "BLOCKED_FAIL_CLOSED", "SOURCE_INSPECTION_FAILED",
+            "Synthetic source safety inspection could not be completed.",
+            source_document=source_document,
+        )
+
+    destination = request.arguments.get("destination")
+    inspection = inspect_action_context(
+        task_purpose=task.purpose,
+        passport_permissions=permissions,
+        source_trust=source_document.trust_level if source_document else None,
+        source_values=source_values,
+        tool_name=request.tool_name,
+        arguments=request.arguments,
+        destination=destination if isinstance(destination, str) else None,
+        caller_organization_matches=(
+            principal.organization_id == task.organization_id
+            == session.organization_id
+            and (
+                source_document is None
+                or source_document.organization_id == principal.organization_id
+            )
+        ),
+        caller_authorized=(
+            principal.user.role == "OWNER_ADMIN"
+            and task.owner_id == principal.user.id
+            and session.owner_id == principal.user.id
+        ),
+    )
+    findings = _finding_records(principal.organization_id, inspection.findings)
+    if not inspection.safety_context_valid:
+        return _Evaluation(
+            "BLOCKED_FAIL_CLOSED", "SAFETY_CONTEXT_UNAVAILABLE",
+            "Required privacy and authorization context could not be verified.",
+            source_document=source_document,
+            findings=findings,
+            quarantine=inspection.severe_unsafe_action,
+        )
+
     try:
         arguments = definition.argument_schema.model_validate(request.arguments)
     except ValidationError:
         return _Evaluation(
             "BLOCKED_FAIL_CLOSED", "INVALID_ARGUMENTS",
             "Tool arguments failed validation.",
+            source_document=source_document,
+            findings=findings,
+            quarantine=inspection.severe_unsafe_action,
         )
 
-    permissions = _permission_lists(passport)
-    if permissions is None:
-        return _Evaluation(
-            "BLOCKED_FAIL_CLOSED", "INVALID_PASSPORT_PERMISSIONS",
-            "Task Passport permissions could not be verified.",
-            validated_arguments=arguments,
-        )
     allowed, forbidden, approval_required = permissions
-
-    source_document: SourceDocument | None = None
-    findings: list[DataFinding] = []
-    if request.tool_name == "read_invoice":
-        source_document = _find_source_document(
-            db, principal.organization_id, request, arguments
+    if request.tool_name == "read_invoice" and "invoice" not in task.purpose.casefold():
+        return _Evaluation(
+            "BLOCK", "TASK_PURPOSE_MISMATCH",
+            "Invoice reading is outside the task purpose.",
+            source_document=source_document,
+            validated_arguments=arguments,
+            findings=findings,
+            quarantine=inspection.severe_unsafe_action,
         )
-        if source_document is None:
-            return _Evaluation(
-                "BLOCKED_FAIL_CLOSED", "SOURCE_CONTEXT_MISSING",
-                "A matching synthetic source document is required.",
-                validated_arguments=arguments,
-            )
-        if source_document.trust_level not in ("TRUSTED", "UNTRUSTED"):
-            return _Evaluation(
-                "BLOCKED_FAIL_CLOSED", "SOURCE_TRUST_UNAVAILABLE",
-                "Source document trust could not be verified.",
-                source_document=source_document,
-                validated_arguments=arguments,
-            )
-        if "invoice" not in task.purpose.casefold():
-            return _Evaluation(
-                "BLOCK", "TASK_PURPOSE_MISMATCH",
-                "Invoice reading is outside the task purpose.",
-                source_document=source_document,
-                validated_arguments=arguments,
-            )
-        if source_document.trust_level == "UNTRUSTED":
-            findings.append(
-                DataFinding(
-                    organization_id=principal.organization_id,
-                    category="PROMPT_INJECTION",
-                    masked_value="Untrusted source instruction (content masked)",
-                    location_hint="invoice.untrusted_instruction",
-                    confidence=1.0,
-                    detector="synthetic_fixture_metadata",
-                    recommended_action="REVIEW",
-                )
-            )
 
     if request.tool_name == "delete_backup":
         return _Evaluation(
@@ -313,6 +415,7 @@ def _evaluate_action(
             source_document=source_document,
             validated_arguments=arguments,
             findings=findings,
+            quarantine=inspection.severe_unsafe_action,
         )
     if request.tool_name == "send_email":
         return _Evaluation(
@@ -321,6 +424,7 @@ def _evaluate_action(
             source_document=source_document,
             validated_arguments=arguments,
             findings=findings,
+            quarantine=inspection.severe_unsafe_action,
         )
     if request.tool_name in forbidden:
         return _Evaluation(
@@ -329,6 +433,7 @@ def _evaluate_action(
             source_document=source_document,
             validated_arguments=arguments,
             findings=findings,
+            quarantine=inspection.severe_unsafe_action,
         )
     if request.tool_name in approval_required:
         return _Evaluation(
@@ -337,6 +442,7 @@ def _evaluate_action(
             source_document=source_document,
             validated_arguments=arguments,
             findings=findings,
+            quarantine=inspection.severe_unsafe_action,
         )
     if request.tool_name not in allowed:
         return _Evaluation(
@@ -345,6 +451,7 @@ def _evaluate_action(
             source_document=source_document,
             validated_arguments=arguments,
             findings=findings,
+            quarantine=inspection.severe_unsafe_action,
         )
     if request.tool_name != "read_invoice" or definition.category != "read":
         return _Evaluation(
@@ -353,6 +460,7 @@ def _evaluate_action(
             source_document=source_document,
             validated_arguments=arguments,
             findings=findings,
+            quarantine=inspection.severe_unsafe_action,
         )
     return _Evaluation(
         "ALLOW", "INVOICE_READ_ALLOWED",
@@ -360,6 +468,7 @@ def _evaluate_action(
         source_document=source_document,
         validated_arguments=arguments,
         findings=findings,
+        quarantine=inspection.severe_unsafe_action,
     )
 
 
@@ -392,6 +501,23 @@ def _audit_action(
     )
 
 
+def _decision_severity(evaluation: _Evaluation) -> str:
+    categories = {finding.category for finding in evaluation.findings}
+    if evaluation.quarantine and "DESTRUCTIVE_ACTION_REQUEST" in categories:
+        return "CRITICAL"
+    if evaluation.quarantine or evaluation.outcome == "BLOCKED_FAIL_CLOSED":
+        return "HIGH"
+    if categories & {
+        "PROMPT_INJECTION",
+        "EXTERNAL_DATA_EXPOSURE",
+        "DESTRUCTIVE_ACTION_REQUEST",
+    }:
+        return "HIGH"
+    if categories:
+        return "MEDIUM"
+    return "LOW"
+
+
 def _response(
     action: ActionRequest,
     decision: PolicyDecision,
@@ -418,6 +544,7 @@ def _response(
                 category=finding.category,
                 masked_value=finding.masked_value,
                 location_hint=finding.location_hint,
+                confidence=finding.confidence,
             )
             for finding in findings
         ],
@@ -465,6 +592,7 @@ def enforce_action(
     except UnknownToolError:
         safe_tool_name = "unknown"
     destination = validated_arguments.get("destination")
+    safe_destination = _sanitize(destination, "destination")
     action = ActionRequest(
         organization_id=principal.organization_id,
         task_id=agent_session.task_id,
@@ -474,9 +602,7 @@ def enforce_action(
         masked_arguments_json=json.dumps(
             _sanitize(validated_arguments), sort_keys=True
         ),
-        destination=_masked_email_destination(
-            destination if isinstance(destination, str) else None
-        ),
+        destination=safe_destination if isinstance(safe_destination, str) else None,
         source_document_id=(
             evaluation.source_document.id
             if evaluation.source_document is not None
@@ -498,8 +624,8 @@ def enforce_action(
         outcome=evaluation.outcome,
         policy_reason=evaluation.reason_code,
         plain_reason=evaluation.reason,
-        severity="HIGH" if evaluation.outcome == "BLOCKED_FAIL_CLOSED" else "LOW",
-        triggered_quarantine=False,
+        severity=_decision_severity(evaluation),
+        triggered_quarantine=evaluation.quarantine,
         tool_executed=False,
     )
     db.add(decision)
@@ -507,6 +633,14 @@ def enforce_action(
         finding.action_request_id = action.id
         db.add(finding)
     db.flush()
+    if evaluation.quarantine:
+        quarantine_session_for_action(
+            db,
+            principal=principal,
+            agent_session=agent_session,
+            action=action,
+            findings=evaluation.findings,
+        )
     db.commit()
 
     if decision.outcome == "ALLOW":

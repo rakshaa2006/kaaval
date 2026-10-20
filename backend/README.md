@@ -45,6 +45,10 @@ The API will be available at http://localhost:8000
   `POST /api/tasks/{task_id}/passport/activate`, and
   `POST /api/tasks/{task_id}/passport/regenerate`
 - Action enforcement: `POST /api/sessions/{session_id}/actions`
+- Incident review: `GET /api/incidents`,
+  `GET /api/incidents/{incident_id}`,
+  `POST /api/incidents/{incident_id}/acknowledge`, and
+  `POST /api/incidents/{incident_id}/resolve`
 - API docs: http://localhost:8000/docs
 
 ## Running Tests
@@ -109,6 +113,11 @@ Protected actions must use the enforcement gateway. It persists an action and
 policy decision before executing an allowed mock tool. For the current MVP,
 only an active session with a valid active Passport may perform an allowed
 synthetic invoice read; email and backup deletion are never executed.
+
+The gateway inspects synthetic action context, stores only masked findings,
+and quarantines sessions for severe unsafe actions. Quarantine incidents and
+mock notification intents are persisted transactionally; resolving an incident
+does not reactivate its session.
 
 No real email, file deletion, customer data, messaging credentials, or external
 LLM integration is configured or implemented.

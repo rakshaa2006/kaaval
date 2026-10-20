@@ -15,6 +15,8 @@ from app.models import (
     AgentSession,
     AuditEvent,
     DataFinding,
+    Incident,
+    Notification,
     Organization,
     PolicyDecision,
     SourceDocument,
@@ -89,6 +91,11 @@ def test_poisoned_invoice_read_is_allowed_but_records_untrusted_finding(
     payload = result.json()
     assert payload["decision"]["outcome"] == "ALLOW"
     assert payload["result"]["simulated"] is True
+    assert db_session.scalar(
+        select(PolicyDecision).where(
+            PolicyDecision.action_request_id == payload["action_id"]
+        )
+    ).severity == "HIGH"
     assert payload["result"]["output"]["trust_level"] == "UNTRUSTED"
     assert "untrusted_instruction" in payload["result"]["output"]["invoice"]
     assert "archive@external-recipient.example.test" not in result.text
@@ -99,6 +106,53 @@ def test_poisoned_invoice_read_is_allowed_but_records_untrusted_finding(
         )
     )
     assert finding is not None
+    persisted_categories = set(
+        db_session.scalars(
+            select(DataFinding.category).where(
+                DataFinding.action_request_id == payload["action_id"]
+            )
+        ).all()
+    )
+    assert {
+        "PROMPT_INJECTION",
+        "CUSTOMER_EMAIL",
+        "PHONE_NUMBER",
+        "GOVERNMENT_ID_LIKE",
+        "CUSTOMER_LIST",
+        "EXTERNAL_DATA_EXPOSURE",
+        "DESTRUCTIVE_ACTION_REQUEST",
+    } <= persisted_categories
+    assert "customer-01@synthetic-customer.example.test" not in result.text
+    assert "0000000000" not in result.text
+    assert "0000 0000 0000" not in result.text
+    assert "Synthetic Customer 01" not in result.text
+    persisted_findings = db_session.scalars(
+        select(DataFinding).where(
+            DataFinding.action_request_id == payload["action_id"]
+        )
+    ).all()
+    masked_text = " ".join(finding.masked_value for finding in persisted_findings)
+    assert "c***@synthetic-customer.example.test" in masked_text
+    assert "***-***-0000" in masked_text
+    assert "XXXXXX0000" in masked_text
+    assert "customer-01@synthetic-customer.example.test" not in masked_text
+    assert "0000000000" not in masked_text
+    assert "0000 0000 0000" not in masked_text
+    action_audits = db_session.scalars(
+        select(AuditEvent).where(AuditEvent.action_id == payload["action_id"])
+    ).all()
+    assert all(
+        sensitive_value not in event.description + str(event.metadata_json)
+        for event in action_audits
+        for sensitive_value in (
+            "customer-01@synthetic-customer.example.test",
+            "0000000000",
+            "0000 0000 0000",
+            "Synthetic Customer 01",
+        )
+    )
+    agent_session = db_session.get(AgentSession, session_id)
+    assert agent_session.status == "ACTIVE"
 
 
 @pytest.mark.parametrize(
@@ -119,6 +173,7 @@ def test_poisoned_invoice_read_is_allowed_but_records_untrusted_finding(
         ),
         ("some_unknown_tool", {}, "BLOCKED_FAIL_CLOSED"),
         ("read_invoice", {"fixture_key": "..\\private.json"}, "BLOCKED_FAIL_CLOSED"),
+        ("read_invoice", {"fixture_key": ["not", "a", "fixture"]}, "BLOCKED_FAIL_CLOSED"),
     ],
 )
 def test_non_allowed_actions_never_execute(
@@ -338,6 +393,208 @@ def test_no_real_network_or_destructive_side_effect_occurs(
     assert deletion.json()["decision"]["tool_executed"] is False
     assert backup.exists()
     assert backup.read_text(encoding="utf-8") == "synthetic fixture backup"
+
+
+def test_poisoned_external_exposure_quarantines_and_creates_incident(
+    client, db_session, monkeypatch
+) -> None:
+    owner, session_id = create_active_session(client, db_session)
+    poisoned_document = db_session.scalar(
+        select(SourceDocument).where(
+            SourceDocument.organization_id == owner.organization_id,
+            SourceDocument.fixture_key == "supplier-invoice-poisoned",
+        )
+    )
+
+    def reject_execution(*args, **kwargs):
+        _ = args, kwargs
+        raise AssertionError("Unsafe external communication must not execute.")
+
+    monkeypatch.setattr("app.services.enforcement_gateway.execute_tool", reject_execution)
+    result = post_action(
+        client,
+        session_id,
+        "send_email",
+        {
+            "destination": "archive@external-recipient.example.test",
+            "template": "supplier_invoice_reminder",
+        },
+        source_document_id=poisoned_document.id,
+    )
+
+    assert result.status_code == 200
+    response = result.json()
+    assert response["decision"]["outcome"] == "BLOCK"
+    assert response["decision"]["tool_executed"] is False
+    assert "archive@external-recipient.example.test" not in result.text
+    assert "EXTERNAL_DATA_EXPOSURE" in {
+        finding["category"] for finding in response["findings"]
+    }
+    agent_session = db_session.get(AgentSession, session_id)
+    assert agent_session.status == "QUARANTINED"
+    incident = db_session.scalar(
+        select(Incident).where(Incident.agent_session_id == session_id)
+    )
+    assert incident is not None
+    assert incident.triggering_action_id == response["action_id"]
+    assert incident.containment_status == "CONTAINED"
+    notification = db_session.scalar(
+        select(Notification).where(Notification.incident_id == incident.id)
+    )
+    assert notification is not None
+    assert notification.channel == "MOCK"
+    assert notification.status == "PENDING"
+    assert "archive@external-recipient.example.test" not in (
+        incident.summary + str(notification.last_error)
+    )
+    related_audits = db_session.scalars(
+        select(AuditEvent).where(AuditEvent.incident_id == incident.id)
+    ).all()
+    assert all(
+        "archive@external-recipient.example.test"
+        not in (event.description + str(event.metadata_json))
+        for event in related_audits
+    )
+    detail = client.get(f"/api/incidents/{incident.id}")
+    assert "archive@external-recipient.example.test" not in detail.text
+
+
+def test_destructive_request_quarantines_and_later_action_fails_closed(
+    client, db_session, monkeypatch
+) -> None:
+    _, session_id = create_active_session(client, db_session)
+
+    def reject_execution(*args, **kwargs):
+        _ = args, kwargs
+        raise AssertionError("Destructive tools must not execute.")
+
+    monkeypatch.setattr("app.services.enforcement_gateway.execute_tool", reject_execution)
+    deletion = post_action(
+        client,
+        session_id,
+        "delete_backup",
+        {"backup_id": "synthetic-backup-daily-001"},
+    )
+    assert deletion.status_code == 200
+    assert deletion.json()["decision"]["outcome"] == "BLOCK"
+    assert deletion.json()["decision"]["tool_executed"] is False
+    assert db_session.get(AgentSession, session_id).status == "QUARANTINED"
+
+    later_action = post_action(
+        client,
+        session_id,
+        "read_invoice",
+        {"fixture_key": "supplier-invoice-clean"},
+    )
+    assert later_action.status_code == 200
+    assert later_action.json()["decision"]["outcome"] == "BLOCKED_FAIL_CLOSED"
+    assert later_action.json()["decision"]["reason_code"] == "SESSION_QUARANTINED"
+    assert later_action.json()["decision"]["tool_executed"] is False
+    assert len(
+        db_session.scalars(
+            select(Incident).where(Incident.agent_session_id == session_id)
+        ).all()
+    ) == 1
+
+
+def test_incident_review_does_not_reactivate_quarantined_session(
+    client, db_session
+) -> None:
+    _, session_id = create_active_session(client, db_session)
+    action = post_action(
+        client,
+        session_id,
+        "delete_backup",
+        {"backup_id": "synthetic-backup-daily-001"},
+    )
+    incident = db_session.scalar(
+        select(Incident).where(
+            Incident.triggering_action_id == action.json()["action_id"]
+        )
+    )
+    assert incident is not None
+
+    listed = client.get("/api/incidents")
+    detail = client.get(f"/api/incidents/{incident.id}")
+    acknowledged = client.post(
+        f"/api/incidents/{incident.id}/acknowledge"
+    )
+    resolved = client.post(f"/api/incidents/{incident.id}/resolve")
+
+    assert listed.status_code == 200
+    assert any(item["id"] == incident.id for item in listed.json())
+    assert detail.status_code == 200
+    assert detail.json()["notifications"][0]["status"] == "PENDING"
+    assert acknowledged.json()["owner_review_status"] == "REVIEWED"
+    assert resolved.json()["owner_review_status"] == "RESOLVED"
+    assert db_session.get(AgentSession, session_id).status == "QUARANTINED"
+
+
+def test_another_organization_cannot_access_incident(client, db_session) -> None:
+    owner, session_id = create_active_session(client, db_session)
+    action = post_action(
+        client,
+        session_id,
+        "delete_backup",
+        {"backup_id": "synthetic-backup-daily-001"},
+    )
+    incident = db_session.scalar(
+        select(Incident).where(
+            Incident.triggering_action_id == action.json()["action_id"]
+        )
+    )
+    other_organization = Organization(
+        name="Synthetic Incident Isolation Organization",
+        environment="SYNTHETIC_DEMO",
+        is_active=True,
+    )
+    db_session.add(other_organization)
+    db_session.flush()
+    incident.organization_id = other_organization.id
+    db_session.flush()
+
+    result = client.get(f"/api/incidents/{incident.id}")
+
+    assert result.status_code == 404
+    assert result.json()["code"] == "INCIDENT_NOT_FOUND"
+    assert owner.organization_id != other_organization.id
+
+
+def test_unknown_fixture_integrity_context_fails_closed(client, db_session) -> None:
+    owner, session_id = create_active_session(client, db_session)
+    clean_document = db_session.scalar(
+        select(SourceDocument).where(
+            SourceDocument.organization_id == owner.organization_id,
+            SourceDocument.fixture_key == "supplier-invoice-clean",
+        )
+    )
+    clean_document.content_hash = "0" * 64
+    db_session.flush()
+
+    result = post_action(
+        client,
+        session_id,
+        "read_invoice",
+        {"fixture_key": "supplier-invoice-clean"},
+    )
+
+    assert result.status_code == 200
+    assert result.json()["decision"]["outcome"] == "BLOCKED_FAIL_CLOSED"
+    assert result.json()["decision"]["reason_code"] == "SOURCE_INSPECTION_FAILED"
+    assert result.json()["decision"]["tool_executed"] is False
+
+
+def test_incident_endpoints_require_authentication(client) -> None:
+    paths = (
+        ("get", "/api/incidents"),
+        ("get", "/api/incidents/synthetic-incident-id"),
+        ("post", "/api/incidents/synthetic-incident-id/acknowledge"),
+        ("post", "/api/incidents/synthetic-incident-id/resolve"),
+    )
+    for method, path in paths:
+        response = getattr(client, method)(path)
+        assert response.status_code == 401
+        assert response.json()["code"] == "UNAUTHENTICATED"
 
 
 def test_action_arguments_and_destination_are_masked_in_storage_and_response(
