@@ -24,7 +24,10 @@ pip install -r requirements.txt
 copy .env.example .env        # Windows
 # cp .env.example .env        # macOS / Linux
 
-# 4. Run the application
+# 4. Create local schema and synthetic demo data
+python -m app.seed
+
+# 5. Run the application
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -42,6 +45,13 @@ pytest
 
 The test suite uses an isolated in-memory SQLite database with foreign-key
 enforcement enabled. The application initializes SQLAlchemy tables on startup.
+
+## Synthetic Demo Credentials
+
+The local seed command creates `owner@example.test` with the demo-only password
+`kaaval-demo-only`. The seed command is restricted to `SYNTHETIC_DEMO` with
+SQLite; the database stores only a salted scrypt hash, never the plaintext
+password. Do not use this demo password outside local synthetic development.
 
 ## Environment Variables
 
