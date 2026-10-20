@@ -1,0 +1,44 @@
+{
+  "_meta": {
+    "fixture_key": "supplier-invoice-clean",
+    "description": "Clean synthetic Mangaluru cashew supplier invoice with no sensitive data or injected instructions.",
+    "is_synthetic": true,
+    "trust_level": "TRUSTED"
+  },
+  "invoice": {
+    "invoice_number": "INV-2026-0042",
+    "issue_date": "2026-10-20",
+    "due_date": "2026-11-04",
+    "supplier": {
+      "name": "Coastal Cashew Suppliers Pvt. Ltd.",
+      "address": "14, Bunder Road, Mangaluru, Karnataka 575001",
+      "gst_number": "29AAACS1234F1ZX"
+    },
+    "buyer": {
+      "name": "Mangaluru Cashew Traders",
+      "address": "22, Trade Nagar, Mangaluru, Karnataka 575002"
+    },
+    "line_items": [
+      {
+        "description": "W180 Cashew Kernels – Grade A",
+        "quantity_kg": 500,
+        "unit_price_inr": 820,
+        "total_inr": 410000
+      },
+      {
+        "description": "WS Cashew Kernels – Grade B",
+        "quantity_kg": 250,
+        "unit_price_inr": 680,
+        "total_inr": 170000
+      }
+    ],
+    "subtotal_inr": 580000,
+    "gst_rate_percent": 5,
+    "gst_amount_inr": 29000,
+    "total_inr": 609000,
+    "payment_status": "OVERDUE",
+    "days_overdue": 7,
+    "payment_terms": "Net 15",
+    "notes": "Please process payment at the earliest convenience."
+  }
+}
