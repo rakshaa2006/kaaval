@@ -5,14 +5,20 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
+from app.db.base import Base, utc_now
 
 
 class ActionRequest(Base):
     __tablename__ = "action_requests"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "request_id", name="uq_action_requests_org_request"),
+        Index("ix_action_requests_organization_created_at", "organization_id", "created_at"),
+        Index("ix_action_requests_task_created_at", "task_id", "created_at"),
+        Index("ix_action_requests_session_created_at", "session_id", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
@@ -27,7 +33,7 @@ class ActionRequest(Base):
         String(36), ForeignKey("agent_sessions.id"), nullable=False, index=True
     )
     # Opaque client-assigned request ID for idempotency
-    request_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
+    request_id: Mapped[str] = mapped_column(String(36), nullable=False)
     tool_name: Mapped[str] = mapped_column(String(100), nullable=False)
     # Masked arguments only — never store raw sensitive values
     masked_arguments_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
@@ -38,10 +44,11 @@ class ActionRequest(Base):
     # Source trust: TRUSTED | UNTRUSTED | UNKNOWN
     source_trust: Mapped[str] = mapped_column(String(50), nullable=False, default="UNKNOWN")
     purpose_context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
 
     # Relationships
     task: Mapped["Task"] = relationship(back_populates="action_requests")
+    organization: Mapped["Organization"] = relationship()
     agent_session: Mapped["AgentSession"] = relationship(back_populates="action_requests")
     source_document: Mapped[Optional["SourceDocument"]] = relationship(
         back_populates="action_requests"
