@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import get_settings
@@ -65,6 +65,25 @@ def create_tables() -> None:
     import app.audit.service  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    upgrade_sqlite_schema(engine)
+
+
+def upgrade_sqlite_schema(database_engine=engine) -> None:
+    """Apply safe additive SQLite changes needed by the current seed schema."""
+    if database_engine.dialect.name != "sqlite":
+        return
+
+    with database_engine.begin() as connection:
+        user_columns = {
+            column["name"] for column in inspect(connection).get_columns("users")
+        }
+        if "status" not in user_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE users ADD COLUMN status "
+                    "VARCHAR(50) NOT NULL DEFAULT 'ACTIVE'"
+                )
+            )
 
 
 def get_db():
