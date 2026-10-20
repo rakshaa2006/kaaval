@@ -68,11 +68,11 @@ class TaskPassport(Base):
 
     @property
     def is_active_and_valid(self) -> bool:
-        if self.activation_status != "ACTIVE":
-            return False
-        if self.expires_at and utc_now() > self.expires_at:
-            return False
-        return True
+        return (
+            self.activation_status == "ACTIVE"
+            and self.expires_at is not None
+            and utc_now() < self.expires_at
+        )
 
     def __repr__(self) -> str:
         return (
