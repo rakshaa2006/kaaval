@@ -5,14 +5,17 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
+from app.db.base import Base, utc_now
 
 
 class PolicyDecision(Base):
     __tablename__ = "policy_decisions"
+    __table_args__ = (
+        Index("ix_policy_decisions_organization_decided_at", "organization_id", "decided_at"),
+    )
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
@@ -35,10 +38,11 @@ class PolicyDecision(Base):
     # Whether the mock tool was actually executed after this decision
     tool_executed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     tool_result_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    decided_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    decided_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
 
     # Relationships
     action_request: Mapped["ActionRequest"] = relationship(back_populates="policy_decision")
+    organization: Mapped["Organization"] = relationship()
 
     def __repr__(self) -> str:
         return f"<PolicyDecision id={self.id!r} outcome={self.outcome!r}>"
