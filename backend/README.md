@@ -40,6 +40,9 @@ The API will be available at http://localhost:8000
 pytest
 ```
 
+The test suite uses an isolated in-memory SQLite database with foreign-key
+enforcement enabled. The application initializes SQLAlchemy tables on startup.
+
 ## Environment Variables
 
 See `.env.example` for all supported variables with descriptions.
@@ -64,10 +67,10 @@ backend/
     services/        — Reserved for future service code
     policy/          — Reserved for future policy code
     tools/           — Reserved for future tool adapters
-    audit/           — Reserved for future audit code
+    audit/           — Append-only audit event persistence
     integrations/    — Reserved for future integration adapters
     attack_lab/      — Reserved for future simulation code
-  tests/             — pytest health/readiness tests
+  tests/             — pytest health, schema, relationship, and scope tests
 ```
 
 No email, file deletion, customer data, messaging credentials, or external LLM integration is configured or implemented.
