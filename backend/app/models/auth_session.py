@@ -25,7 +25,10 @@ class AuthSession(Base):
         String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     organization_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     # SHA-256 hash of the opaque bearer token — never store the raw token
     token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
