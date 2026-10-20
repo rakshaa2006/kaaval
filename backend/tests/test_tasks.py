@@ -6,11 +6,19 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.auth.security import hash_password
 from app.db.base import utc_now
-from app.models import AuditEvent, Organization, Task, TaskPassport, User
+from app.models import (
+    ActionRequest,
+    AgentSession,
+    AuditEvent,
+    Organization,
+    Task,
+    TaskPassport,
+    User,
+)
 from app.seed import DEMO_OWNER_EMAIL, DEMO_OWNER_PASSWORD, seed_synthetic_data
 
 FIXTURE_DIRECTORY = Path(__file__).resolve().parents[2] / "fixtures" / "invoices"
@@ -42,6 +50,7 @@ def test_all_task_endpoints_require_authentication(client) -> None:
         ("get", "/api/tasks/synthetic-task-id/passport", None),
         ("post", "/api/tasks/synthetic-task-id/passport/activate", None),
         ("post", "/api/tasks/synthetic-task-id/passport/regenerate", None),
+        ("post", "/api/tasks/synthetic-task-id/sessions", None),
     )
     for method, path, body in requests:
         response = getattr(client, method)(path, json=body) if body is not None else getattr(
@@ -183,6 +192,63 @@ def test_activation_is_explicit_and_transitions_task_and_passport(client, db_ses
             AuditEvent.event_type == "PASSPORT_ACTIVATED",
         )
     ) is not None
+
+
+def test_owner_can_create_active_session_only_after_passport_activation(
+    client, db_session
+) -> None:
+    owner = authenticate(client, db_session)
+    task = create_task(client)
+
+    before_activation = client.post(f"/api/tasks/{task['id']}/sessions")
+    assert before_activation.status_code == 409
+
+    generated = client.post(f"/api/tasks/{task['id']}/passport/generate")
+    draft_session = client.post(f"/api/tasks/{task['id']}/sessions")
+    assert generated.status_code == 200
+    assert draft_session.status_code == 409
+
+    activation = client.post(f"/api/tasks/{task['id']}/passport/activate")
+    session_result = client.post(f"/api/tasks/{task['id']}/sessions")
+
+    assert activation.status_code == 200
+    assert session_result.status_code == 201
+    session_data = session_result.json()
+    assert session_data["organization_id"] == owner.organization_id
+    assert session_data["task_id"] == task["id"]
+    assert session_data["owner_id"] == owner.id
+    assert session_data["passport_id"] == activation.json()["id"]
+    assert session_data["status"] == "ACTIVE"
+    assert db_session.scalar(
+        select(AgentSession).where(AgentSession.id == session_data["id"])
+    ) is not None
+    assert db_session.scalar(
+        select(ActionRequest).where(ActionRequest.session_id == session_data["id"])
+    ) is None
+    assert db_session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.session_id == session_data["id"],
+            AuditEvent.event_type == "SESSION_CREATED",
+        )
+    ) is not None
+
+
+def test_expired_passport_cannot_create_session(client, db_session) -> None:
+    authenticate(client, db_session)
+    task = create_task(client)
+    generated = client.post(f"/api/tasks/{task['id']}/passport/generate")
+    client.post(f"/api/tasks/{task['id']}/passport/activate")
+    db_session.execute(
+        update(TaskPassport)
+        .where(TaskPassport.id == generated.json()["id"])
+        .values(expires_at=utc_now() - timedelta(seconds=1))
+    )
+
+    result = client.post(f"/api/tasks/{task['id']}/sessions")
+
+    assert result.status_code == 409
+    assert result.json()["code"] == "ACTIVE_PASSPORT_REQUIRED"
+    assert db_session.scalar(select(AgentSession)) is None
 
 
 def test_invalid_lifecycle_transitions_are_rejected(client, db_session) -> None:

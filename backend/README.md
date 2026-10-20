@@ -44,6 +44,7 @@ The API will be available at http://localhost:8000
   `GET /api/tasks/{task_id}/passport`,
   `POST /api/tasks/{task_id}/passport/activate`, and
   `POST /api/tasks/{task_id}/passport/regenerate`
+- Action enforcement: `POST /api/sessions/{session_id}/actions`
 - API docs: http://localhost:8000/docs
 
 ## Running Tests
@@ -103,6 +104,11 @@ The internal mock tool registry exposes lookup and execution through
 `app.tools`, but no tool is callable through an HTTP endpoint. `read_invoice`
 reads only the synthetic invoice fixtures; `send_email` and `delete_backup`
 return simulated results without network or filesystem side effects.
+
+Protected actions must use the enforcement gateway. It persists an action and
+policy decision before executing an allowed mock tool. For the current MVP,
+only an active session with a valid active Passport may perform an allowed
+synthetic invoice read; email and backup deletion are never executed.
 
 No real email, file deletion, customer data, messaging credentials, or external
 LLM integration is configured or implemented.

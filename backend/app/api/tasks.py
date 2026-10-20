@@ -4,13 +4,16 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.errors import APIError
+from app.audit.service import append_audit_event
 from app.auth.service import AuthenticatedUser, get_authenticated_user, get_session_token
-from app.db.base import get_db
-from app.models import Task, TaskPassport
+from app.db.base import get_db, utc_now
+from app.models import AgentSession, Task, TaskPassport
 from app.schemas.tasks import (
+    AgentSessionResponse,
     PassportDataPolicy,
     PassportResponse,
     TaskCreateRequest,
@@ -73,6 +76,18 @@ def _passport_response(passport: TaskPassport) -> PassportResponse:
         expires_at=passport.expires_at,
         activated_at=passport.activated_at,
         created_at=passport.created_at,
+    )
+
+
+def _session_response(agent_session: AgentSession) -> AgentSessionResponse:
+    return AgentSessionResponse(
+        id=agent_session.id,
+        organization_id=agent_session.organization_id,
+        task_id=agent_session.task_id,
+        passport_id=agent_session.passport_id,
+        owner_id=agent_session.owner_id,
+        status=agent_session.status,
+        created_at=agent_session.created_at,
     )
 
 
@@ -150,3 +165,84 @@ def regenerate_passport_endpoint(
     return _passport_response(
         generate_passport(db, principal, task, regenerate=True)
     )
+
+
+@router.post(
+    "/{task_id}/sessions",
+    response_model=AgentSessionResponse,
+    status_code=201,
+)
+def create_session_endpoint(
+    task_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AgentSessionResponse:
+    principal = _require_principal(request, db)
+    task = get_scoped_task(db, principal, task_id, for_update=True)
+    if task.status != "ACTIVE":
+        raise APIError(
+            409,
+            "TASK_NOT_ACTIVE",
+            "Task must be active before a session can be created.",
+        )
+
+    passport = db.scalar(
+        select(TaskPassport)
+        .where(
+            TaskPassport.task_id == task.id,
+            TaskPassport.organization_id == principal.organization_id,
+            TaskPassport.activation_status == "ACTIVE",
+        )
+        .order_by(TaskPassport.version.desc())
+        .with_for_update()
+    )
+    if passport is None:
+        raise APIError(
+            409,
+            "ACTIVE_PASSPORT_REQUIRED",
+            "Task must have an active Passport before a session can be created.",
+        )
+    if not passport.is_active_and_valid:
+        if passport.activation_status == "ACTIVE" and (
+            passport.expires_at is None or passport.expires_at <= utc_now()
+        ):
+            passport.activation_status = "EXPIRED"
+            task.status = "EXPIRED"
+            task.updated_at = utc_now()
+            db.commit()
+        raise APIError(
+            409,
+            "ACTIVE_PASSPORT_REQUIRED",
+            "Task Passport must be active and unexpired before session creation.",
+        )
+    if passport.generation_status != "GENERATED" or not passport_permissions_are_valid(
+        passport
+    ):
+        raise APIError(
+            409,
+            "INVALID_PASSPORT",
+            "Task Passport policy could not be verified.",
+        )
+
+    agent_session = AgentSession(
+        organization_id=principal.organization_id,
+        task_id=task.id,
+        passport_id=passport.id,
+        owner_id=principal.user.id,
+        status="ACTIVE",
+    )
+    db.add(agent_session)
+    db.flush()
+    append_audit_event(
+        db,
+        organization_id=principal.organization_id,
+        task_id=task.id,
+        session_id=agent_session.id,
+        actor_type="OWNER",
+        actor_id=principal.user.id,
+        event_type="SESSION_CREATED",
+        description="Active agent session created for the task.",
+        is_simulation=True,
+    )
+    db.commit()
+    return _session_response(agent_session)

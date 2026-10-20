@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 
 from app.api.auth import router as auth_router
+from app.api.actions import router as actions_router
 from app.api.errors import (
     APIError,
     api_error_handler,
@@ -40,6 +41,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router, prefix="/api")
     app.include_router(auth_router, prefix="/api")
     app.include_router(tasks_router, prefix="/api")
+    app.include_router(actions_router, prefix="/api")
 
     return app
 

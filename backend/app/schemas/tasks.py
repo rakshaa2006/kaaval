@@ -30,6 +30,16 @@ class TaskResponse(BaseModel):
     updated_at: datetime
 
 
+class AgentSessionResponse(BaseModel):
+    id: str
+    organization_id: str
+    task_id: str
+    passport_id: str
+    owner_id: str
+    status: str
+    created_at: datetime
+
+
 class PassportDataPolicy(BaseModel):
     synthetic_data_only: bool
     allowed_data_sources: list[str]
