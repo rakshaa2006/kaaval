@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, Session
 
 # Point to an in-memory SQLite database for tests
@@ -23,8 +23,6 @@ def engine():
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
     )
-    # Enable foreign-key enforcement
-    from sqlalchemy import event
 
     @event.listens_for(test_engine, "connect")
     def enable_fk(dbapi_conn, _):
@@ -36,6 +34,7 @@ def engine():
     Base.metadata.create_all(bind=test_engine)
     yield test_engine
     Base.metadata.drop_all(bind=test_engine)
+    test_engine.dispose()
 
 
 @pytest.fixture()
@@ -46,11 +45,13 @@ def db_session(engine):
     TestingSession = sessionmaker(bind=connection, autocommit=False, autoflush=False)
     session = TestingSession()
 
-    yield session
-
-    session.close()
-    transaction.rollback()
-    connection.close()
+    try:
+        yield session
+    finally:
+        session.close()
+        if transaction.is_active:
+            transaction.rollback()
+        connection.close()
 
 
 @pytest.fixture()
