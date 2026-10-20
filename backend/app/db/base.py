@@ -85,6 +85,36 @@ def upgrade_sqlite_schema(database_engine=engine) -> None:
                 )
             )
 
+        if inspect(connection).has_table("auth_sessions"):
+            session_columns = {
+                column["name"]
+                for column in inspect(connection).get_columns("auth_sessions")
+            }
+            if "organization_id" not in session_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE auth_sessions ADD COLUMN organization_id "
+                        "VARCHAR(36) REFERENCES organizations(id)"
+                    )
+                )
+                if "organization_id" in user_columns:
+                    connection.execute(
+                        text(
+                            "UPDATE auth_sessions SET organization_id = "
+                            "(SELECT organization_id FROM users "
+                            "WHERE users.id = auth_sessions.user_id) "
+                            "WHERE organization_id IS NULL"
+                        )
+                    )
+                if "created_at" in session_columns:
+                    connection.execute(
+                        text(
+                            "CREATE INDEX IF NOT EXISTS "
+                            "ix_auth_sessions_organization_created_at "
+                            "ON auth_sessions (organization_id, created_at)"
+                        )
+                    )
+
 
 def get_db():
     """FastAPI dependency: yield a database session, close it after the request."""
