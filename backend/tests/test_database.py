@@ -107,6 +107,65 @@ def test_sqlite_upgrade_adds_missing_user_status_without_losing_data() -> None:
         legacy_engine.dispose()
 
 
+def test_sqlite_upgrade_backfills_auth_session_organization() -> None:
+    legacy_engine = create_engine("sqlite:///:memory:")
+    try:
+        with legacy_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "CREATE TABLE organizations (id VARCHAR(36) PRIMARY KEY)"
+                )
+            )
+            connection.execute(
+                text(
+                    "CREATE TABLE users (id VARCHAR(36) PRIMARY KEY, "
+                    "organization_id VARCHAR(36) NOT NULL, email VARCHAR(320) NOT NULL)"
+                )
+            )
+            connection.execute(
+                text(
+                    "CREATE TABLE auth_sessions (id VARCHAR(36) PRIMARY KEY, "
+                    "user_id VARCHAR(36) NOT NULL, created_at DATETIME NOT NULL)"
+                )
+            )
+            connection.execute(
+                text("INSERT INTO organizations (id) VALUES ('synthetic-org-id')")
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, organization_id, email) "
+                    "VALUES ('synthetic-user-id', 'synthetic-org-id', "
+                    "'legacy@example.test')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO auth_sessions (id, user_id, created_at) "
+                    "VALUES ('synthetic-session-id', 'synthetic-user-id', "
+                    "'2025-01-01 00:00:00')"
+                )
+            )
+
+        upgrade_sqlite_schema(legacy_engine)
+        upgrade_sqlite_schema(legacy_engine)
+
+        with legacy_engine.connect() as connection:
+            organization_id = connection.execute(
+                text(
+                    "SELECT organization_id FROM auth_sessions "
+                    "WHERE id = 'synthetic-session-id'"
+                )
+            ).scalar_one()
+            indexes = {
+                index["name"]
+                for index in inspect(connection).get_indexes("auth_sessions")
+            }
+        assert organization_id == "synthetic-org-id"
+        assert "ix_auth_sessions_organization_created_at" in indexes
+    finally:
+        legacy_engine.dispose()
+
+
 def test_lifecycle_states_reject_contradictory_values(db_session: Session) -> None:
     organization = Organization(name="Synthetic Lifecycle Org")
     db_session.add(organization)
