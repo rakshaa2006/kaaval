@@ -5,14 +5,18 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
+from app.db.base import Base, utc_now
 
 
 class DataFinding(Base):
     __tablename__ = "data_findings"
+    __table_args__ = (
+        Index("ix_data_findings_organization_created_at", "organization_id", "created_at"),
+        Index("ix_data_findings_action_created_at", "action_request_id", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
@@ -36,10 +40,11 @@ class DataFinding(Base):
     detector: Mapped[str] = mapped_column(String(100), nullable=False, default="regex")
     # Recommended policy action signal (not the final decision)
     recommended_action: Mapped[str] = mapped_column(String(50), nullable=False, default="REVIEW")
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
 
     # Relationships
     action_request: Mapped["ActionRequest"] = relationship(back_populates="data_findings")
+    organization: Mapped["Organization"] = relationship()
 
     def __repr__(self) -> str:
         return (
