@@ -31,7 +31,8 @@ export const SessionMonitorPage: React.FC = () => {
 };
 
 const BackendSessionMonitor: React.FC<{ sessionId: string }> = ({ sessionId }) => {
-  const { submitAction, incidents } = useGovernance();
+  const { createSession, submitAction, incidents } = useGovernance();
+  const { navigate } = useRouter();
   const [session, setSession] = useState<ApiSession | null>(null);
   const [task, setTask] = useState<ApiTask | null>(null);
   const [timeline, setTimeline] = useState<ApiAuditEvent[]>([]);
@@ -39,6 +40,7 @@ const BackendSessionMonitor: React.FC<{ sessionId: string }> = ({ sessionId }) =
   const [action, setAction] = useState<ApiAction | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
+  const [startingSession, setStartingSession] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -64,6 +66,11 @@ const BackendSessionMonitor: React.FC<{ sessionId: string }> = ({ sessionId }) =
     void load();
   }, [load]);
 
+  useEffect(() => {
+    setAction(null);
+    setToolName('read_invoice');
+  }, [sessionId]);
+
   const handleAction = async () => {
     setWorking(true);
     setError(null);
@@ -72,7 +79,7 @@ const BackendSessionMonitor: React.FC<{ sessionId: string }> = ({ sessionId }) =
         toolName === 'read_invoice'
           ? { fixture_key: 'supplier-invoice-clean' }
           : toolName === 'send_email'
-            ? { destination: 'vendor@example.test', template: 'supplier_invoice_reminder' }
+            ? { destination: 'vendor@supplier.example.test', template: 'supplier_invoice_reminder' }
             : { backup_id: 'synthetic-backup-demo-01' };
       setAction(await submitAction(sessionId, toolName, args));
       await load();
@@ -80,6 +87,20 @@ const BackendSessionMonitor: React.FC<{ sessionId: string }> = ({ sessionId }) =
       setError(actionError instanceof Error ? actionError.message : 'Unable to submit the action.');
     } finally {
       setWorking(false);
+    }
+  };
+
+  const handleStartSession = async () => {
+    if (!task) return;
+    setStartingSession(true);
+    setError(null);
+    try {
+      const nextSession = await createSession(task.id);
+      navigate(`/app/sessions/${nextSession.id}`);
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : 'Unable to start a new session.');
+    } finally {
+      setStartingSession(false);
     }
   };
 
@@ -110,9 +131,19 @@ const BackendSessionMonitor: React.FC<{ sessionId: string }> = ({ sessionId }) =
     <ConsoleLayout breadcrumbs={[{ label: 'Sessions', href: '/app' }, { label: session.id }]}>
       <div className="max-w-4xl space-y-5">
         <section className="rounded-xl border border-slate-200 bg-white p-6">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="rounded bg-slate-100 px-2 py-1 font-mono text-xs text-slate-600">{session.id}</span>
-            <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{session.status}</span>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="rounded bg-slate-100 px-2 py-1 font-mono text-xs text-slate-600">{session.id}</span>
+              <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{session.status}</span>
+            </div>
+            <button
+              disabled={startingSession}
+              onClick={() => void handleStartSession()}
+              className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50"
+              title="Start a new session for this task using its active Passport"
+            >
+              {startingSession ? 'Starting...' : 'Start Session'}
+            </button>
           </div>
           <h1 className="mt-4 text-2xl font-bold text-slate-950">Backend session monitor</h1>
           <p className="mt-2 text-sm text-slate-600">{task.purpose}</p>
