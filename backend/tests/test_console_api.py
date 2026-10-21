@@ -75,6 +75,7 @@ def test_console_api_supports_task_session_and_audit_flow(client, db_session) ->
     assert allowed_action.status_code == 200
     assert allowed_action.json()["decision"]["outcome"] == "ALLOW"
     assert allowed_action.json()["decision"]["tool_executed"] is True
+    assert allowed_action.json()["result"]["output"]["invoice"]["invoice_number"] == "SYN-INV-0042"
 
     blocked_action = client.post(
         f"/api/sessions/{session_id}/actions",
@@ -90,7 +91,9 @@ def test_console_api_supports_task_session_and_audit_flow(client, db_session) ->
     timeline = client.get(f"/api/sessions/{session_id}/timeline")
     assert timeline.status_code == 200
     assert any(event["event_type"] == "SESSION_CREATED" for event in timeline.json())
+    assert any(event["event_type"] == "ACTION_ALLOWED" for event in timeline.json())
     assert any(event["event_type"] == "ACTION_BLOCKED" for event in timeline.json())
+    assert any(event["event_type"] == "INCIDENT_CREATED" for event in timeline.json())
 
     incidents = client.get("/api/incidents")
     assert incidents.status_code == 200
@@ -98,6 +101,60 @@ def test_console_api_supports_task_session_and_audit_flow(client, db_session) ->
     audit = client.get("/api/audit")
     assert audit.status_code == 200
     assert any(event["event_type"] == "TASK_CREATED" for event in audit.json())
+
+
+def test_forbidden_email_and_destructive_actions_create_incidents(client, db_session) -> None:
+    authenticate(client, db_session)
+
+    prohibited_actions = (
+        (
+            "send_email",
+            {
+                "destination": "vendor@supplier.example.test",
+                "template": "supplier_invoice_reminder",
+            },
+            "EXTERNAL_COMMUNICATION_FORBIDDEN",
+        ),
+        (
+            "delete_backup",
+            {"backup_id": "synthetic-backup-demo-01"},
+            "DESTRUCTIVE_TOOL_FORBIDDEN",
+        ),
+    )
+    for tool_name, arguments, expected_reason in prohibited_actions:
+        created = client.post(
+            "/api/tasks",
+            json={"purpose": "Process synthetic invoice fixture."},
+        )
+        assert created.status_code == 201
+        task_id = created.json()["id"]
+        assert client.post(f"/api/tasks/{task_id}/passport/generate").status_code == 200
+        activated = client.post(f"/api/tasks/{task_id}/passport/activate")
+        assert activated.status_code == 200
+        created_session = client.post(f"/api/tasks/{task_id}/sessions")
+        assert created_session.status_code == 201
+        session_id = created_session.json()["id"]
+
+        action = client.post(
+            f"/api/sessions/{session_id}/actions",
+            json={"tool_name": tool_name, "arguments": arguments},
+        )
+
+        assert action.status_code == 200
+        assert action.json()["decision"]["outcome"] == "BLOCK"
+        assert action.json()["decision"]["reason_code"] == expected_reason
+        assert action.json()["decision"]["tool_executed"] is False
+        assert client.get(f"/api/sessions/{session_id}").json()["status"] == "QUARANTINED"
+        timeline = client.get(f"/api/sessions/{session_id}/timeline")
+        assert timeline.status_code == 200
+        assert any(event["event_type"] == "ACTION_BLOCKED" for event in timeline.json())
+        assert any(event["event_type"] == "INCIDENT_CREATED" for event in timeline.json())
+        incidents = client.get("/api/incidents")
+        assert any(
+            incident["agent_session_id"] == session_id
+            and incident["triggering_action_id"] == action.json()["action_id"]
+            for incident in incidents.json()
+        )
 
 
 def test_console_api_keeps_session_and_audit_reads_authenticated(client) -> None:

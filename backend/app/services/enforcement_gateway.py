@@ -424,7 +424,7 @@ def _evaluate_action(
             source_document=source_document,
             validated_arguments=arguments,
             findings=findings,
-            quarantine=inspection.severe_unsafe_action,
+            quarantine=True,
         )
     if request.tool_name in forbidden:
         return _Evaluation(
