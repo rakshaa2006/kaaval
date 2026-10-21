@@ -14,6 +14,7 @@ import { PassportReviewPage } from './pages/PassportReviewPage';
 import { SessionMonitorPage } from './pages/SessionMonitorPage';
 import { IncidentDetailsPage } from './pages/IncidentDetailsPage';
 import { AuditTimelinePage } from './pages/AuditTimelinePage';
+import { IncidentsPage } from './pages/IncidentsPage';
 
 function AppContent() {
   const { path } = useRouter();
@@ -49,6 +50,10 @@ function AppContent() {
 
   if (path === '/app/audit') {
     return <AuditTimelinePage />;
+  }
+
+  if (path === '/app/incidents') {
+    return <IncidentsPage />;
   }
 
   // Fallback default

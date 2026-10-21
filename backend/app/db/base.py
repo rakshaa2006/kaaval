@@ -115,6 +115,36 @@ def upgrade_sqlite_schema(database_engine=engine) -> None:
                         )
                     )
 
+        if inspect(connection).has_table("task_passports"):
+            passport_columns = {
+                column["name"]
+                for column in inspect(connection).get_columns("task_passports")
+            }
+            if "generation_metadata_json" not in passport_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE task_passports ADD COLUMN "
+                        "generation_metadata_json TEXT"
+                    )
+                )
+
+        if inspect(connection).has_table("attack_runs"):
+            attack_run_columns = {
+                column["name"]
+                for column in inspect(connection).get_columns("attack_runs")
+            }
+            if "updated_at" not in attack_run_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE attack_runs ADD COLUMN updated_at DATETIME "
+                        "NOT NULL DEFAULT '1970-01-01 00:00:00'"
+                    )
+                )
+                if "created_at" in attack_run_columns:
+                    connection.execute(
+                        text("UPDATE attack_runs SET updated_at = created_at")
+                    )
+
 
 def get_db():
     """FastAPI dependency: yield a database session, close it after the request."""

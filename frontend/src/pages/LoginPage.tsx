@@ -1,21 +1,21 @@
 import React, { useState } from 'react';
-import { Link, useRouter } from '../router/Router';
+import { Link } from '../router/Router';
 import { useGovernance } from '../context/GovernanceContext';
-import { MOCK_USERS } from '../data/mockData';
-import { ShieldCheck, ArrowRight, UserCheck, Lock } from 'lucide-react';
+import { ShieldCheck, ArrowRight, Lock } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
-  const { login } = useGovernance();
-  const { navigate } = useRouter();
-  const [selectedUser, setSelectedUser] = useState(MOCK_USERS[0]);
+  const { login, apiError, clearApiError } = useGovernance();
   const [loading, setLoading] = useState(false);
 
-  const handleSignIn = (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
+    clearApiError();
     setLoading(true);
-    setTimeout(() => {
-      login(selectedUser);
-    }, 300);
+    try {
+      await login();
+    } catch {
+      setLoading(false);
+    }
   };
 
   return (
@@ -28,10 +28,10 @@ export const LoginPage: React.FC = () => {
           <span>Kaaval</span>
         </Link>
         <h2 className="text-xl font-bold tracking-tight text-slate-900">
-          Sign in to Defense Console
+          Enter the Defense Console
         </h2>
         <p className="text-xs text-slate-500">
-          Choose a pre-configured enterprise role to test governance capabilities.
+          Sign in with the seeded local synthetic demo owner account.
         </p>
       </div>
 
@@ -40,43 +40,11 @@ export const LoginPage: React.FC = () => {
           <form onSubmit={handleSignIn} className="space-y-5">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
-                Select Demo Role &amp; Identity
+                Demo identity
               </label>
-              <div className="space-y-2">
-                {MOCK_USERS.map((user) => {
-                  const isSelected = selectedUser.id === user.id;
-                  return (
-                    <button
-                      type="button"
-                      key={user.id}
-                      onClick={() => setSelectedUser(user)}
-                      className={`w-full text-left p-3 rounded-lg border transition-all flex items-center justify-between ${
-                        isSelected
-                          ? 'border-slate-900 bg-slate-900 text-white shadow-xs'
-                          : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-900'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold font-mono ${
-                            isSelected ? 'bg-slate-800 text-emerald-400' : 'bg-slate-200 text-slate-700'
-                          }`}
-                        >
-                          {user.initials}
-                        </div>
-                        <div>
-                          <p className={`text-xs font-bold ${isSelected ? 'text-white' : 'text-slate-900'}`}>
-                            {user.name}
-                          </p>
-                          <p className={`text-[11px] ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
-                            {user.role}
-                          </p>
-                        </div>
-                      </div>
-                      {isSelected && <UserCheck className="w-4 h-4 text-emerald-400" />}
-                    </button>
-                  );
-                })}
+              <div className="p-3 rounded-lg border border-slate-200 bg-slate-50">
+                <p className="text-xs font-bold text-slate-900">owner@example.test</p>
+                <p className="text-[11px] text-slate-500 mt-1">Owner administrator · local synthetic demo</p>
               </div>
             </div>
 
@@ -86,16 +54,22 @@ export const LoginPage: React.FC = () => {
                 <span>Simulated Zero-Trust Session</span>
               </div>
               <p>
-                No real credentials required. Instant entry into mock governance environment.
+                The backend sets an HttpOnly session cookie. Demo login is available only in the local synthetic environment.
               </p>
             </div>
+
+            {apiError && (
+              <p role="alert" className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3">
+                {apiError}
+              </p>
+            )}
 
             <button
               type="submit"
               disabled={loading}
               className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-xs font-bold text-white bg-slate-950 hover:bg-slate-800 transition-colors shadow-xs active:scale-[0.99] disabled:opacity-50"
             >
-              <span>{loading ? 'Authenticating...' : 'Enter Defense Console'}</span>
+              <span>{loading ? 'Connecting to Kaaval API...' : 'Open Demo Console'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </form>

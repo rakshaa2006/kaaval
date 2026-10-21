@@ -153,9 +153,11 @@ export const IncidentDetailsPage: React.FC = () => {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Forensic Evidence: Intercepted Raw Payload
+              {incident.source === 'api' ? 'Action Payload' : 'Forensic Evidence: Sample Payload'}
             </h2>
-            <span className="text-[11px] font-mono text-slate-400">Captured at Enforcement Gateway</span>
+            <span className="text-[11px] font-mono text-slate-400">
+              {incident.source === 'api' ? 'Raw payload is not exposed by the backend' : 'Mock scenario sample'}
+            </span>
           </div>
           <CodeViewer code={incident.rawPayloadSample} language="text" title={`Incident Forensics Dump (${incident.id})`} />
         </div>
@@ -163,7 +165,7 @@ export const IncidentDetailsPage: React.FC = () => {
         {/* Action Link to Session or Audit */}
         <div className="flex items-center justify-between p-4 bg-slate-100 rounded-xl border border-slate-200 text-xs">
           <span className="text-slate-600">
-            Audit trail entry recorded with immutable cryptographic hash.
+            Review the backend incident and containment events in the audit timeline.
           </span>
           <Link
             href="/app/audit"

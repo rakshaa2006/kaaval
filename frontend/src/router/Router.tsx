@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 
 interface RouterContextType {
   path: string;
@@ -51,8 +51,6 @@ export const RouterProvider: React.FC<RouterProviderProps> = ({ children }) => {
     return window.location.pathname || '/';
   });
 
-  const [currentParams, setCurrentParams] = useState<Record<string, string>>({});
-
   useEffect(() => {
     const handlePopState = () => {
       setCurrentPath(window.location.pathname || '/');
@@ -70,23 +68,20 @@ export const RouterProvider: React.FC<RouterProviderProps> = ({ children }) => {
     }
   }, []);
 
-  // Update params when path changes based on standard routes
-  useEffect(() => {
+  const currentParams = useMemo(() => {
     const routes = [
       '/app/tasks/:id',
       '/app/sessions/:id',
       '/app/incidents/:id',
     ];
 
-    let foundParams: Record<string, string> = {};
     for (const route of routes) {
       const match = matchPath(route, currentPath);
       if (match.matches) {
-        foundParams = match.params;
-        break;
+        return match.params;
       }
     }
-    setCurrentParams(foundParams);
+    return {};
   }, [currentPath]);
 
   return (

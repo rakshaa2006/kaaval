@@ -166,6 +166,60 @@ def test_sqlite_upgrade_backfills_auth_session_organization() -> None:
         legacy_engine.dispose()
 
 
+def test_sqlite_upgrade_adds_passport_and_attack_run_columns() -> None:
+    legacy_engine = create_engine("sqlite:///:memory:")
+    try:
+        with legacy_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "CREATE TABLE users (id VARCHAR(36) PRIMARY KEY, "
+                    "email VARCHAR(320) NOT NULL)"
+                )
+            )
+            connection.execute(
+                text(
+                    "CREATE TABLE task_passports (id VARCHAR(36) PRIMARY KEY)"
+                )
+            )
+            connection.execute(
+                text(
+                    "CREATE TABLE attack_runs (id VARCHAR(36) PRIMARY KEY, "
+                    "created_at DATETIME NOT NULL)"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO task_passports (id) VALUES ('legacy-passport-id')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO attack_runs (id, created_at) "
+                    "VALUES ('legacy-run-id', '2025-01-01 00:00:00')"
+                )
+            )
+
+        upgrade_sqlite_schema(legacy_engine)
+        upgrade_sqlite_schema(legacy_engine)
+
+        with legacy_engine.connect() as connection:
+            passport_metadata = connection.execute(
+                text(
+                    "SELECT generation_metadata_json FROM task_passports "
+                    "WHERE id = 'legacy-passport-id'"
+                )
+            ).scalar_one()
+            run_updated_at = connection.execute(
+                text(
+                    "SELECT updated_at FROM attack_runs WHERE id = 'legacy-run-id'"
+                )
+            ).scalar_one()
+        assert passport_metadata is None
+        assert run_updated_at == "2025-01-01 00:00:00"
+    finally:
+        legacy_engine.dispose()
+
+
 def test_lifecycle_states_reject_contradictory_values(db_session: Session) -> None:
     organization = Organization(name="Synthetic Lifecycle Org")
     db_session.add(organization)

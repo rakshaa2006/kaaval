@@ -64,10 +64,10 @@ export const AuditTimelinePage: React.FC = () => {
               <span>Immutable Ledger</span>
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-slate-950">
-              Audit Timeline &amp; Cryptographic Chain
+              Audit Timeline
             </h1>
             <p className="text-xs text-slate-500 mt-1">
-              Every tool check, privacy inspection, policy decision, and quarantine trigger is hashed into a tamper-evident audit log.
+              Backend events are persisted chronologically. The current API does not expose cryptographic hashes; mock sample records are kept separate from backend actions.
             </p>
           </div>
 
@@ -121,9 +121,9 @@ export const AuditTimelinePage: React.FC = () => {
         <div className="space-y-3">
           <div className="flex items-center justify-between text-xs text-slate-500 px-1">
             <span className="font-semibold uppercase tracking-wider text-[11px]">
-              Showing {filteredLogs.length} Cryptographically Chained Events
+              Showing {filteredLogs.length} Events
             </span>
-            <span className="font-mono text-[11px]">SHA-256 Chained Hash</span>
+            <span className="font-mono text-[11px]">Backend records + mock samples</span>
           </div>
 
           {filteredLogs.length === 0 ? (
@@ -170,7 +170,7 @@ export const AuditTimelinePage: React.FC = () => {
                           {new Date(log.timestamp).toLocaleTimeString()}
                         </span>
                         <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
-                          Hash: {log.hash}
+                          {log.source === 'api' ? 'Backend event' : `Sample hash: ${log.hash}`}
                         </span>
                       </div>
                     </div>
@@ -180,25 +180,27 @@ export const AuditTimelinePage: React.FC = () => {
                       <div className="mt-4 pt-4 border-t border-slate-200/80 grid sm:grid-cols-2 gap-4 text-xs bg-slate-100/50 p-3 rounded-lg">
                         <div>
                           <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                            Cryptographic Verification
+                            Event record details
                           </p>
                           <p className="text-slate-600 font-mono text-[11px]">
-                            Block Hash: <span className="text-slate-900 font-bold">{log.hash}</span>
+                            Source: <span className="text-slate-900 font-bold">{log.source === 'api' ? 'Backend' : 'Mock sample'}</span>
                           </p>
                           <p className="text-slate-600 font-mono text-[11px]">
-                            Parent Hash: <span className="text-slate-700">{log.previousHash}</span>
+                            Event identifier: <span className="text-slate-900">{log.id}</span>
                           </p>
-                          <p className="text-emerald-700 font-semibold text-[11px] mt-1">
-                            ✓ Merkle Chain Integrity Confirmed
+                          <p className="text-slate-500 text-[11px] mt-1">
+                            {log.source === 'api'
+                              ? 'A cryptographic hash is not included in the backend audit response.'
+                              : 'Sample telemetry only; this is not a cryptographic verification.'}
                           </p>
                         </div>
 
                         <div>
                           <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                            Regulatory Compliance Attestation
+                            Event context
                           </p>
                           <p className="text-slate-600 text-[11px]">
-                            Tamper-evident log recorded under SOC 2 Type II and ISO 42001 governance controls.
+                            {log.details}
                           </p>
                         </div>
                       </div>

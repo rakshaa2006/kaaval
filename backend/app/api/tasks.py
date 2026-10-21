@@ -101,6 +101,23 @@ def create_task_endpoint(
     return _task_response(create_task(db, principal, payload.purpose))
 
 
+@router.get("", response_model=list[TaskResponse])
+def list_tasks_endpoint(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> list[TaskResponse]:
+    principal = _require_principal(request, db)
+    tasks = db.scalars(
+        select(Task)
+        .where(
+            Task.organization_id == principal.organization_id,
+            Task.owner_id == principal.user.id,
+        )
+        .order_by(Task.created_at.desc())
+    ).all()
+    return [_task_response(task) for task in tasks]
+
+
 @router.get("/{task_id}", response_model=TaskResponse)
 def get_task_endpoint(
     task_id: str,

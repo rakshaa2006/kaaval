@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ConsoleLayout } from '../components/layout/ConsoleLayout';
 import { useGovernance } from '../context/GovernanceContext';
 import { useRouter, Link } from '../router/Router';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { CodeViewer } from '../components/common/CodeViewer';
+import { api, ApiAction, ApiAuditEvent, ApiSession, ApiTask } from '../api/client';
+import { MOCK_SESSIONS } from '../data/mockData';
 import {
   Terminal,
   ShieldCheck,
@@ -20,6 +22,173 @@ import {
 } from 'lucide-react';
 
 export const SessionMonitorPage: React.FC = () => {
+  const { params } = useRouter();
+  const sessionId = params.id || '';
+  if (MOCK_SESSIONS.some((session) => session.id === sessionId)) {
+    return <MockSessionMonitor />;
+  }
+  return <BackendSessionMonitor sessionId={sessionId} />;
+};
+
+const BackendSessionMonitor: React.FC<{ sessionId: string }> = ({ sessionId }) => {
+  const { submitAction, incidents } = useGovernance();
+  const [session, setSession] = useState<ApiSession | null>(null);
+  const [task, setTask] = useState<ApiTask | null>(null);
+  const [timeline, setTimeline] = useState<ApiAuditEvent[]>([]);
+  const [toolName, setToolName] = useState('read_invoice');
+  const [action, setAction] = useState<ApiAction | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const loadedSession = await api.getSession(sessionId);
+      const [loadedTask, loadedTimeline] = await Promise.all([
+        api.getTask(loadedSession.task_id),
+        api.getSessionTimeline(sessionId),
+      ]);
+      setSession(loadedSession);
+      setTask(loadedTask);
+      setTimeline(loadedTimeline);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Unable to load this session.');
+    } finally {
+      setLoading(false);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const handleAction = async () => {
+    setWorking(true);
+    setError(null);
+    try {
+      const args: Record<string, unknown> =
+        toolName === 'read_invoice'
+          ? { fixture_key: 'supplier-invoice-clean' }
+          : toolName === 'send_email'
+            ? { destination: 'vendor@example.test', template: 'supplier_invoice_reminder' }
+            : { backup_id: 'synthetic-backup-demo-01' };
+      setAction(await submitAction(sessionId, toolName, args));
+      await load();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'Unable to submit the action.');
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const relatedIncident = incidents.find(
+    (incident) => incident.source === 'api' && incident.sessionId === sessionId,
+  );
+
+  if (loading) {
+    return (
+      <ConsoleLayout breadcrumbs={[{ label: 'Sessions', href: '/app' }, { label: 'Loading session' }]}>
+        <p role="status" className="text-sm text-slate-600">Loading session and backend timeline...</p>
+      </ConsoleLayout>
+    );
+  }
+  if (error && !session) {
+    return (
+      <ConsoleLayout breadcrumbs={[{ label: 'Sessions', href: '/app' }, { label: 'Unavailable' }]}>
+        <div className="space-y-4 rounded-xl border border-rose-200 bg-white p-6">
+          <p role="alert" className="text-sm text-rose-700">{error}</p>
+          <button onClick={() => void load()} className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white">Retry</button>
+        </div>
+      </ConsoleLayout>
+    );
+  }
+  if (!session || !task) return null;
+
+  return (
+    <ConsoleLayout breadcrumbs={[{ label: 'Sessions', href: '/app' }, { label: session.id }]}>
+      <div className="max-w-4xl space-y-5">
+        <section className="rounded-xl border border-slate-200 bg-white p-6">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="rounded bg-slate-100 px-2 py-1 font-mono text-xs text-slate-600">{session.id}</span>
+            <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{session.status}</span>
+          </div>
+          <h1 className="mt-4 text-2xl font-bold text-slate-950">Backend session monitor</h1>
+          <p className="mt-2 text-sm text-slate-600">{task.purpose}</p>
+          <p className="mt-1 text-xs text-slate-500">Policy enforcement and action results come from the FastAPI backend.</p>
+        </section>
+
+        <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-6">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-600">Propose a synthetic action</h2>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="grid gap-1 text-xs font-semibold text-slate-700">
+              Tool
+              <select
+                value={toolName}
+                onChange={(event) => setToolName(event.target.value)}
+                className="min-w-64 rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-xs"
+              >
+                <option value="read_invoice">read_invoice (allowed fixture read)</option>
+                <option value="send_email">send_email (forbidden outbound action)</option>
+                <option value="delete_backup">delete_backup (forbidden destructive action)</option>
+              </select>
+            </label>
+            <button
+              disabled={working || session.status !== 'ACTIVE'}
+              onClick={() => void handleAction()}
+              className="rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              {working ? 'Checking policy...' : 'Submit action'}
+            </button>
+          </div>
+          {session.status !== 'ACTIVE' && (
+            <p className="text-xs text-amber-800">This session is no longer active; the backend will not accept new actions.</p>
+          )}
+          {error && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
+          {action && (
+            <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-bold text-slate-800">
+                Backend decision: {action.decision.outcome} · {action.decision.reason_code}
+              </p>
+              <p className="text-sm text-slate-700">{action.decision.reason}</p>
+              <p className="text-xs text-slate-500">Tool executed: {action.decision.tool_executed ? 'Yes' : 'No'}</p>
+              {action.result && <CodeViewer code={JSON.stringify(action.result, null, 2)} title="Backend tool result" />}
+            </div>
+          )}
+          {relatedIncident && (
+            <Link href={`/app/incidents/${relatedIncident.id}`} className="inline-flex rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-800">
+              View incident {relatedIncident.id}
+            </Link>
+          )}
+        </section>
+
+        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-6">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-600">Persisted session timeline</h2>
+            <button onClick={() => void load()} className="text-xs font-semibold text-slate-700 underline">Refresh</button>
+          </div>
+          {timeline.length === 0 ? (
+            <p className="text-sm text-slate-500">No events have been recorded for this session yet.</p>
+          ) : (
+            <ol className="space-y-3">
+              {timeline.map((event) => (
+                <li key={event.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                  <p className="font-mono text-xs font-bold text-slate-900">{event.event_type}</p>
+                  <p className="mt-1 text-sm text-slate-700">{event.description}</p>
+                  <time className="mt-1 block text-[11px] text-slate-500">{new Date(event.occurred_at).toLocaleString()}</time>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+        <Link href="/app/audit" className="inline-block text-xs font-semibold text-slate-700 underline">Open organization audit timeline</Link>
+      </div>
+    </ConsoleLayout>
+  );
+};
+
+const MockSessionMonitor: React.FC = () => {
   const { params, navigate } = useRouter();
   const { sessions, tasks } = useGovernance();
 

@@ -33,7 +33,7 @@ export const LandingPage: React.FC = () => {
               Synthetic Demo Environment
             </span>
             <span className="font-medium">
-              This interactive demonstration simulates AI agent runtime behavior using typed mock telemetry.
+              A local synthetic demo using the Kaaval backend for policy and action decisions.
             </span>
           </div>
           <Link
@@ -58,7 +58,7 @@ export const LandingPage: React.FC = () => {
           </h1>
 
           <p className="text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto font-normal leading-relaxed text-balance">
-            Autonomous LLM agents act on behalf of your enterprise. Kaaval enforces signed Task Passports, inspects runtime payloads, and instantly quarantines compromised models before tools are executed.
+            Create a deterministic invoice Task Passport, run synthetic tool actions through the backend enforcement gateway, and review persisted decisions.
           </p>
 
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -80,20 +80,20 @@ export const LandingPage: React.FC = () => {
           {/* Key Quantitative Proof Strip */}
           <div className="pt-12 grid grid-cols-2 md:grid-cols-4 gap-4 text-left border-t border-slate-100">
             <div className="p-4 rounded-lg bg-slate-50 border border-slate-200/60">
-              <p className="text-2xl font-bold font-mono tabular-nums text-slate-900">0 ms</p>
-              <p className="text-xs text-slate-500 font-medium">Post-Execution Regret</p>
+              <p className="text-2xl font-bold font-mono tabular-nums text-slate-900">2</p>
+              <p className="text-xs text-slate-500 font-medium">Synthetic Invoice Fixtures</p>
             </div>
             <div className="p-4 rounded-lg bg-slate-50 border border-slate-200/60">
-              <p className="text-2xl font-bold font-mono tabular-nums text-emerald-700">100%</p>
-              <p className="text-xs text-slate-500 font-medium">Pre-Flight Tool Bounds</p>
+              <p className="text-2xl font-bold font-mono tabular-nums text-emerald-700">1</p>
+              <p className="text-xs text-slate-500 font-medium">Allowlisted MVP Tool</p>
             </div>
             <div className="p-4 rounded-lg bg-slate-50 border border-slate-200/60">
-              <p className="text-2xl font-bold font-mono tabular-nums text-slate-900">Ed25519</p>
-              <p className="text-xs text-slate-500 font-medium">Signed Task Passports</p>
+              <p className="text-2xl font-bold font-mono tabular-nums text-slate-900">Local</p>
+              <p className="text-xs text-slate-500 font-medium">Deterministic Policy API</p>
             </div>
             <div className="p-4 rounded-lg bg-slate-50 border border-slate-200/60">
-              <p className="text-2xl font-bold font-mono tabular-nums text-rose-700">&lt; 35 ms</p>
-              <p className="text-xs text-slate-500 font-medium">Sentinel Quarantine Latency</p>
+              <p className="text-2xl font-bold font-mono tabular-nums text-rose-700">0</p>
+              <p className="text-xs text-slate-500 font-medium">Real External Side Effects</p>
             </div>
           </div>
         </div>

@@ -1,6 +1,10 @@
 # Kaaval Backend Skeleton
 
-Minimal FastAPI backend scaffold using Pydantic, SQLAlchemy, and SQLite for local development. All development data must be synthetic. This scaffold does not implement product workflows, external integrations, or a frontend.
+FastAPI backend using Pydantic, SQLAlchemy, and SQLite for local synthetic
+development. The MVP supports an invoice-task lifecycle, deterministic
+Task Passports, protected action evaluation, quarantine incidents, and audit
+event retrieval. It performs no external integrations and does not execute real
+email or destructive operations.
 
 ## Prerequisites
 
@@ -33,18 +37,26 @@ uvicorn app.main:app --reload --port 8000
 
 The API will be available at http://localhost:8000
 
+The React/Vite frontend runs at http://localhost:5173. Its
+`frontend/.env.local` should contain `VITE_API_BASE_URL=http://localhost:8000`.
+Credentialed CORS is enabled for localhost and 127.0.0.1 on ports 3000 and
+5173 for local development only.
+
 - Liveness: http://localhost:8000/api/health
 - Readiness (checks SQLite connectivity): http://localhost:8000/api/ready
 - Demo authentication: `POST /api/auth/demo-login` (synthetic mode only)
 - Password authentication: `POST /api/auth/login`
 - Current user: `GET /api/auth/me`
 - Logout: `POST /api/auth/logout`
-- Tasks: `POST /api/tasks`, `GET /api/tasks/{task_id}`
+- Tasks: `POST /api/tasks`, `GET /api/tasks`, `GET /api/tasks/{task_id}`
 - Task Passports: `POST /api/tasks/{task_id}/passport/generate`,
   `GET /api/tasks/{task_id}/passport`,
   `POST /api/tasks/{task_id}/passport/activate`, and
   `POST /api/tasks/{task_id}/passport/regenerate`
 - Action enforcement: `POST /api/sessions/{session_id}/actions`
+- Sessions: `GET /api/sessions`, `GET /api/sessions/{session_id}`, and
+  `GET /api/sessions/{session_id}/timeline`
+- Audit events: `GET /api/audit`
 - Incident review: `GET /api/incidents`,
   `GET /api/incidents/{incident_id}`,
   `POST /api/incidents/{incident_id}/acknowledge`, and

@@ -38,6 +38,7 @@ def _summary(incident: Incident) -> IncidentSummaryResponse:
         id=incident.id,
         organization_id=incident.organization_id,
         agent_session_id=incident.agent_session_id,
+        task_id=incident.agent_session.task_id,
         triggering_action_id=incident.triggering_action_id,
         severity=incident.severity,
         summary=incident.summary,

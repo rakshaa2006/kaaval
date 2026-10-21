@@ -17,7 +17,13 @@ import {
 } from 'lucide-react';
 
 export const DashboardPage: React.FC = () => {
-  const { tasks, sessions, incidents, activateScenario } = useGovernance();
+  const { tasks, sessions, incidents, auditLogs, activateScenario } = useGovernance();
+  const backendAllowedActions = auditLogs.filter(
+    (event) => event.source === 'api' && event.action === 'ACTION_ALLOWED',
+  ).length;
+  const backendBlockedActions = auditLogs.filter(
+    (event) => event.source === 'api' && event.action.includes('BLOCK'),
+  ).length;
 
   return (
     <ConsoleLayout breadcrumbs={[{ label: 'Dashboard' }]}>
@@ -29,7 +35,7 @@ export const DashboardPage: React.FC = () => {
               Autonomous Governance Console
             </h1>
             <p className="text-xs text-slate-500 mt-1">
-              Active enforcement gateway status: <span className="text-emerald-700 font-semibold font-mono">NOMINAL</span> · 3 agent sessions monitored
+            Live records are loaded from the local API; scenario cards below are mock previews.
             </p>
           </div>
           <Link
@@ -45,13 +51,13 @@ export const DashboardPage: React.FC = () => {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-1">
             <div className="flex items-center justify-between text-slate-400">
-              <span className="text-xs font-medium">Active Passports</span>
+              <span className="text-xs font-medium">Task Records</span>
               <FileCheck2 className="w-4 h-4 text-slate-500" />
             </div>
             <p className="text-2xl font-extrabold font-mono tabular-nums text-slate-900">
               {tasks.length}
             </p>
-            <p className="text-[11px] text-slate-500">Cryptographically signed</p>
+            <p className="text-[11px] text-slate-500">Backend records and mock previews</p>
           </div>
 
           <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-1">
@@ -60,9 +66,9 @@ export const DashboardPage: React.FC = () => {
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
             </div>
             <p className="text-2xl font-extrabold font-mono tabular-nums text-emerald-700">
-              1,420
+              {backendAllowedActions}
             </p>
-            <p className="text-[11px] text-slate-500">Passed boundary validation</p>
+            <p className="text-[11px] text-slate-500">Persisted backend decisions</p>
           </div>
 
           <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-1">
@@ -71,9 +77,9 @@ export const DashboardPage: React.FC = () => {
               <ShieldAlert className="w-4 h-4 text-rose-600" />
             </div>
             <p className="text-2xl font-extrabold font-mono tabular-nums text-rose-700">
-              {incidents.filter(i => i.threatType === 'UNAUTHORIZED_TOOL_INVOCATION').length + 17}
+              {backendBlockedActions}
             </p>
-            <p className="text-[11px] text-slate-500">Dropped at gateway proxy</p>
+            <p className="text-[11px] text-slate-500">Blocked by backend policy</p>
           </div>
 
           <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-1">
@@ -84,7 +90,7 @@ export const DashboardPage: React.FC = () => {
             <p className="text-2xl font-extrabold font-mono tabular-nums text-amber-800">
               {sessions.filter(s => s.status === 'quarantined').length}
             </p>
-            <p className="text-[11px] text-slate-500">Sentinel container isolated</p>
+            <p className="text-[11px] text-slate-500">Mock and backend sessions</p>
           </div>
         </div>
 
@@ -92,9 +98,9 @@ export const DashboardPage: React.FC = () => {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Demonstration Scenarios · Live Outcomes
+              Demonstration Scenarios · Mock Previews
             </h2>
-            <span className="text-[11px] text-slate-400">Click card to inspect execution telemetry</span>
+            <span className="text-[11px] text-slate-400">Click to inspect sample telemetry</span>
           </div>
 
           <div className="grid md:grid-cols-3 gap-4">
@@ -173,8 +179,8 @@ export const DashboardPage: React.FC = () => {
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="p-4 border-b border-slate-200 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-bold text-slate-900">Active Task Passports</h2>
-              <p className="text-xs text-slate-500">Cryptographically bound agent capabilities</p>
+              <h2 className="text-sm font-bold text-slate-900">Task and Passport Records</h2>
+              <p className="text-xs text-slate-500">Backend-issued policies and demo fixtures</p>
             </div>
             <Link
               href="/app/audit"
@@ -191,7 +197,7 @@ export const DashboardPage: React.FC = () => {
                 <tr>
                   <th className="py-3 px-4">Task Name</th>
                   <th className="py-3 px-4">Agent Identifier</th>
-                  <th className="py-3 px-4">Passport Hash</th>
+                  <th className="py-3 px-4">Policy</th>
                   <th className="py-3 px-4">Allowed Tools</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4 text-right">Action</th>
@@ -213,11 +219,17 @@ export const DashboardPage: React.FC = () => {
                       {task.agentName}
                     </td>
                     <td className="py-3 px-4 font-mono text-slate-500 text-[11px]">
-                      {task.passport.policyHash.slice(0, 14)}...
+                      {task.source === 'api' ? 'Backend policy' : `${task.passport?.policyHash.slice(0, 14) ?? 'No passport'}...`}
                     </td>
                     <td className="py-3 px-4 text-slate-600">
-                      <span>{task.passport.allowedTools.length} tools</span>
-                      <span className="text-slate-400 ml-1">({task.passport.allowedTools.slice(0, 2).join(', ')})</span>
+                      {task.source === 'api'
+                        ? <span>Invoice policy · {task.backendStatus}</span>
+                        : (
+                          <>
+                            <span>{task.passport?.allowedTools.length ?? 0} tools</span>
+                            <span className="text-slate-400 ml-1">({task.passport?.allowedTools.slice(0, 2).join(', ')})</span>
+                          </>
+                        )}
                     </td>
                     <td className="py-3 px-4">
                       <StatusBadge verdict={task.status} size="sm" />
@@ -267,10 +279,10 @@ export const DashboardPage: React.FC = () => {
                     <span className="text-slate-300">·</span>
                     <span className="text-xs text-slate-600 font-medium">{sess.agentName}</span>
                     <span className="text-slate-300">·</span>
-                    <span className="text-[11px] text-slate-400 font-mono tabular-nums">{sess.steps.length} steps executed</span>
+                    <span className="text-[11px] text-slate-400 font-mono tabular-nums">{sess.source === 'api' ? sess.backendStatus : `${sess.steps.length} steps`}</span>
                   </div>
                   <p className="text-xs text-slate-500">
-                    Latest tool: <code className="font-mono text-[11px] bg-slate-100 text-slate-800 px-1 py-0.5 rounded">{sess.steps[sess.steps.length - 1]?.tool}</code>
+                    {sess.source === 'api' ? 'Backend session · no action submitted yet' : <>Latest tool: <code className="font-mono text-[11px] bg-slate-100 text-slate-800 px-1 py-0.5 rounded">{sess.steps[sess.steps.length - 1]?.tool}</code></>}
                   </p>
                 </div>
 

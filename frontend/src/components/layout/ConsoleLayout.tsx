@@ -23,14 +23,14 @@ interface ConsoleLayoutProps {
 
 export const ConsoleLayout: React.FC<ConsoleLayoutProps> = ({ children, breadcrumbs = [] }) => {
   const { path, navigate } = useRouter();
-  const { currentUser, logout } = useGovernance();
+  const { currentUser, logout, apiError } = useGovernance();
 
   const navItems = [
     { label: 'Console Overview', href: '/app', icon: LayoutDashboard },
     { label: 'Issue Task Passport', href: '/app/tasks/new', icon: PlusCircle },
     { label: 'Passport Review', href: '/app/tasks/task-inv-01', icon: FileCheck2 },
     { label: 'Session Monitor', href: '/app/sessions/sess-inv-clean', icon: Terminal },
-    { label: 'Incident Details', href: '/app/incidents/inc-402', icon: ShieldAlert },
+    { label: 'Incidents', href: '/app/incidents', icon: ShieldAlert },
     { label: 'Audit Timeline', href: '/app/audit', icon: History },
   ];
 
@@ -176,6 +176,11 @@ export const ConsoleLayout: React.FC<ConsoleLayoutProps> = ({ children, breadcru
 
         {/* Viewport Content */}
         <main className="flex-1 min-w-0">
+          {apiError && (
+            <div role="alert" className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+              <span>{apiError}</span>
+            </div>
+          )}
           {children}
         </main>
       </div>
@@ -193,7 +198,7 @@ export const ConsoleLayout: React.FC<ConsoleLayoutProps> = ({ children, breadcru
             </span>
           </div>
           <p className="text-[11px] text-slate-400">
-            Client-side simulation with typed mock data. Backend connection ready.
+            Synthetic local demo · backend policy and action decisions are authoritative.
           </p>
         </div>
       </footer>

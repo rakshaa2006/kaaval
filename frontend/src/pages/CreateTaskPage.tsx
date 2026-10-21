@@ -5,71 +5,44 @@ import { useRouter } from '../router/Router';
 import { ShieldCheck, Plus, Check, FileCode, Lock, ArrowRight } from 'lucide-react';
 
 const AVAILABLE_TOOLS = [
-  { id: 'read_invoice_pdf', label: 'read_invoice_pdf', desc: 'Extracts tables and key-value fields from PDF invoices' },
-  { id: 'fetch_vendor_balance', label: 'fetch_vendor_balance', desc: 'Queries ERP accounting ledger for vendor receivables' },
-  { id: 'validate_vat_id', label: 'validate_vat_id', desc: 'Validates EU/US tax identification numbers with authority API' },
-  { id: 'generate_ledger_entry', label: 'generate_ledger_entry', desc: 'Posts reconciliation transaction to accounts payable' },
-  { id: 'query_customer_crm', label: 'query_customer_crm', desc: 'Looks up customer account tier and support tickets' },
-  { id: 'fetch_ticket_history', label: 'fetch_ticket_history', desc: 'Retrieves prior resolution history for escalated tickets' },
-  { id: 'summarize_case_notes', label: 'summarize_case_notes', desc: 'Summarizes diagnostic notes for support engineers' },
+  { id: 'read_invoice', label: 'read_invoice', desc: 'Reads an allowlisted synthetic invoice fixture' },
 ];
 
 const PROHIBITED_TOOL_OPTIONS = [
-  'curl_external_url',
-  'export_customer_pii',
-  'modify_payment_gateway',
-  'execute_shell_command',
-  'network_raw_socket',
-  'query_dns',
+  'send_email',
+  'delete_backup',
 ];
 
 export const CreateTaskPage: React.FC = () => {
-  const { createTask } = useGovernance();
+  const { createTask, apiError, clearApiError } = useGovernance();
   const { navigate } = useRouter();
 
-  const [title, setTitle] = useState('Vendor Statement Verification');
-  const [agentName, setAgentName] = useState('ReconcileBot-Pro');
+  const [title, setTitle] = useState('Process Synthetic Invoice');
   const [category, setCategory] = useState<'finance' | 'customer_ops' | 'infra' | 'data_reconcile'>('finance');
-  const [description, setDescription] = useState('Inspect and cross-reference monthly vendor billing statements with purchase orders.');
-  const [selectedTools, setSelectedTools] = useState<string[]>(['read_invoice_pdf', 'fetch_vendor_balance', 'validate_vat_id']);
-  const [prohibitedTools, setProhibitedTools] = useState<string[]>(['curl_external_url', 'modify_payment_gateway', 'export_customer_pii']);
-  const [maxCallsPerHour, setMaxCallsPerHour] = useState(100);
-  const [piiFilterEnabled, setPiiFilterEnabled] = useState(true);
+  const [description, setDescription] = useState('Read the synthetic clean invoice fixture and summarize its totals.');
+  const selectedTools = ['read_invoice'];
+  const prohibitedTools = ['send_email', 'delete_backup'];
+  const piiFilterEnabled = true;
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const toggleTool = (toolId: string) => {
-    setSelectedTools(prev =>
-      prev.includes(toolId) ? prev.filter(t => t !== toolId) : [...prev, toolId]
-    );
-  };
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const toggleProhibited = (toolId: string) => {
-    setProhibitedTools(prev =>
-      prev.includes(toolId) ? prev.filter(t => t !== toolId) : [...prev, toolId]
-    );
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedTools.length === 0) {
-      alert('Please select at least one allowed tool for the passport.');
-      return;
-    }
+    clearApiError();
+    setSubmitError(null);
     setIsSubmitting(true);
 
-    const newTaskId = createTask({
-      title,
-      agentName,
-      category,
-      allowedTools: selectedTools,
-      prohibitedTools,
-      maxCallsPerHour,
-      description,
-    });
-
-    setTimeout(() => {
+    try {
+      const newTaskId = await createTask({
+        title,
+        description,
+      });
       navigate(`/app/tasks/${newTaskId}`);
-    }, 250);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Unable to create task.');
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -82,12 +55,18 @@ export const CreateTaskPage: React.FC = () => {
       <div className="max-w-4xl space-y-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-950">
-            Issue Signed Task Passport
+            Create Invoice Task and Passport
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Define capability boundaries and runtime permissions for an autonomous AI agent before deployment.
+            The local backend currently supports invoice tasks with a deterministic, fixed tool policy.
           </p>
         </div>
+
+        {(submitError || apiError) && (
+          <p role="alert" className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3">
+            {submitError || apiError}
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 shadow-2xs p-6 space-y-8">
           {/* Section 1: Agent & Mission Metadata */}
@@ -106,7 +85,7 @@ export const CreateTaskPage: React.FC = () => {
                   required
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Vendor Statement Verification"
+                  placeholder="e.g. Process Synthetic Invoice"
                   className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:border-slate-900 bg-white"
                 />
               </div>
@@ -117,12 +96,11 @@ export const CreateTaskPage: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  required
-                  value={agentName}
-                  onChange={(e) => setAgentName(e.target.value)}
-                  placeholder="e.g. ReconcileBot-Pro"
-                  className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:border-slate-900 bg-white font-mono"
+                  value="Kaaval Demo Agent"
+                  disabled
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 bg-slate-100 font-mono text-slate-500"
                 />
+                <p className="mt-1 text-[11px] text-slate-500">Assigned by the local demo backend.</p>
               </div>
             </div>
 
@@ -140,7 +118,7 @@ export const CreateTaskPage: React.FC = () => {
                   <button
                     type="button"
                     key={cat.id}
-                    onClick={() => setCategory(cat.id as any)}
+                    disabled
                     className={`py-2 px-3 text-xs font-medium rounded-lg border text-center transition-colors ${
                       category === cat.id
                         ? 'bg-slate-900 text-white border-slate-900 font-semibold'
@@ -174,7 +152,7 @@ export const CreateTaskPage: React.FC = () => {
                   2. Allowed Tools Whitelist
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Only selected tools will be authorized by the Enforcement Gateway during execution.
+                  This fixed allowlist is generated and enforced by the backend; it cannot be changed in this demo.
                 </p>
               </div>
               <span className="text-xs font-mono font-bold text-emerald-700">
@@ -188,8 +166,7 @@ export const CreateTaskPage: React.FC = () => {
                 return (
                   <div
                     key={tool.id}
-                    onClick={() => toggleTool(tool.id)}
-                    className={`p-3 rounded-lg border cursor-pointer transition-all flex items-start gap-3 ${
+                    className={`p-3 rounded-lg border cursor-not-allowed transition-all flex items-start gap-3 ${
                       isChecked
                         ? 'border-emerald-600 bg-emerald-50/50 shadow-2xs'
                         : 'border-slate-200 bg-white hover:bg-slate-50'
@@ -230,7 +207,7 @@ export const CreateTaskPage: React.FC = () => {
                   <button
                     type="button"
                     key={tool}
-                    onClick={() => toggleProhibited(tool)}
+                    disabled
                     className={`text-xs font-mono px-3 py-1.5 rounded-md border transition-colors flex items-center gap-1.5 ${
                       isProhibited
                         ? 'bg-rose-50 border-rose-300 text-rose-800 font-semibold'
@@ -257,13 +234,12 @@ export const CreateTaskPage: React.FC = () => {
                   Max Calls Per Hour
                 </label>
                 <input
-                  type="number"
-                  min={10}
-                  max={1000}
-                  value={maxCallsPerHour}
-                  onChange={(e) => setMaxCallsPerHour(Number(e.target.value))}
-                  className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 font-mono bg-white"
+                  type="text"
+                  value="Not configured"
+                  disabled
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 font-mono bg-slate-100 text-slate-500"
                 />
+                <p className="mt-1 text-[11px] text-slate-500">Rate limits are not exposed by the backend MVP.</p>
               </div>
 
               <div className="flex items-center gap-3 pt-6">
@@ -271,11 +247,11 @@ export const CreateTaskPage: React.FC = () => {
                   type="checkbox"
                   id="pii_toggle"
                   checked={piiFilterEnabled}
-                  onChange={(e) => setPiiFilterEnabled(e.target.checked)}
+                  disabled
                   className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-0"
                 />
                 <label htmlFor="pii_toggle" className="text-xs font-semibold text-slate-800 cursor-pointer">
-                  Enable Real-time PII &amp; Secret Redaction Filter
+                  Backend deterministic privacy inspection
                 </label>
               </div>
             </div>
@@ -285,7 +261,7 @@ export const CreateTaskPage: React.FC = () => {
           <div className="pt-6 border-t border-slate-100 flex items-center justify-between">
             <div className="flex items-center gap-2 text-xs text-slate-500 font-mono">
               <Lock className="w-3.5 h-3.5 text-slate-400" />
-              <span>Will be signed with Ed25519 Kaaval KMS key</span>
+              <span>Backend generates the deterministic MVP Passport</span>
             </div>
 
             <button
@@ -294,7 +270,7 @@ export const CreateTaskPage: React.FC = () => {
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition-colors shadow-xs active:scale-[0.99] disabled:opacity-50"
             >
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>{isSubmitting ? 'Computing Cryptographic Passport...' : 'Issue Task Passport'}</span>
+              <span>{isSubmitting ? 'Creating task and generating Passport...' : 'Create Task and Generate Passport'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

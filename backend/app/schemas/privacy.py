@@ -36,6 +36,7 @@ class IncidentSummaryResponse(BaseModel):
     id: str
     organization_id: str
     agent_session_id: str
+    task_id: str
     triggering_action_id: str | None
     severity: str
     summary: str

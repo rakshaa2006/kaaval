@@ -26,9 +26,11 @@ export interface Task {
   category: 'finance' | 'customer_ops' | 'infra' | 'data_reconcile';
   status: Verdict;
   createdAt: string;
-  passport: TaskPassport;
+  passport?: TaskPassport;
   activeSessionId?: string;
   description: string;
+  source?: 'mock' | 'api';
+  backendStatus?: string;
 }
 
 export interface InspectionResult {
@@ -71,6 +73,8 @@ export interface Session {
     forensicDumpRef: string;
     explanation: string;
   };
+  source?: 'mock' | 'api';
+  backendStatus?: string;
 }
 
 export interface Incident {
@@ -88,6 +92,8 @@ export interface Incident {
   summary: string;
   rawPayloadSample: string;
   remediationSteps: string[];
+  source?: 'mock' | 'api';
+  backendStatus?: string;
 }
 
 export interface AuditEvent {
@@ -101,6 +107,7 @@ export interface AuditEvent {
   hash: string;
   previousHash: string;
   details: string;
+  source?: 'mock' | 'api';
 }
 
 export interface UserProfile {

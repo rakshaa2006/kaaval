@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ConsoleLayout } from '../components/layout/ConsoleLayout';
 import { useGovernance } from '../context/GovernanceContext';
 import { useRouter, Link } from '../router/Router';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { CodeViewer } from '../components/common/CodeViewer';
+import { api, ApiPassport, ApiTask } from '../api/client';
+import { MOCK_TASKS } from '../data/mockData';
 import {
   FileCheck2,
   ShieldCheck,
@@ -20,6 +22,167 @@ import {
 
 export const PassportReviewPage: React.FC = () => {
   const { params } = useRouter();
+  const taskId = params.id || '';
+  if (MOCK_TASKS.some((task) => task.id === taskId)) {
+    return <MockPassportReview />;
+  }
+  return <BackendPassportReview taskId={taskId} />;
+};
+
+const BackendPassportReview: React.FC<{ taskId: string }> = ({ taskId }) => {
+  const { createSession } = useGovernance();
+  const { navigate } = useRouter();
+  const [task, setTask] = useState<ApiTask | null>(null);
+  const [passport, setPassport] = useState<ApiPassport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [loadedTask, loadedPassport] = await Promise.all([
+        api.getTask(taskId),
+        api.getPassport(taskId),
+      ]);
+      setTask(loadedTask);
+      setPassport(loadedPassport);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Unable to load the task passport.');
+    } finally {
+      setLoading(false);
+    }
+  }, [taskId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const handleActivate = async () => {
+    setWorking(true);
+    setError(null);
+    try {
+      setPassport(await api.activatePassport(taskId));
+      setTask(await api.getTask(taskId));
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'Unable to activate the passport.');
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const handleStartSession = async () => {
+    setWorking(true);
+    setError(null);
+    try {
+      const session = await createSession(taskId);
+      navigate(`/app/sessions/${session.id}`);
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'Unable to start the session.');
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <ConsoleLayout breadcrumbs={[{ label: 'Tasks', href: '/app' }, { label: 'Loading Passport' }]}>
+        <p role="status" className="text-sm text-slate-600">Loading task and Passport from the backend...</p>
+      </ConsoleLayout>
+    );
+  }
+  if (error || !task || !passport) {
+    return (
+      <ConsoleLayout breadcrumbs={[{ label: 'Tasks', href: '/app' }, { label: 'Passport unavailable' }]}>
+        <div className="max-w-2xl space-y-4 rounded-xl border border-rose-200 bg-white p-6">
+          <p role="alert" className="text-sm text-rose-700">{error || 'Task or Passport was not found.'}</p>
+          <button onClick={() => void load()} className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white">
+            Retry
+          </button>
+        </div>
+      </ConsoleLayout>
+    );
+  }
+
+  return (
+    <ConsoleLayout breadcrumbs={[{ label: 'Tasks', href: '/app' }, { label: task.id }]}>
+      <div className="max-w-4xl space-y-5">
+        <section className="rounded-xl border border-slate-200 bg-white p-6">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="rounded bg-slate-100 px-2 py-1 font-mono text-xs text-slate-600">{task.id}</span>
+            <span className="rounded bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800">
+              Task: {task.status}
+            </span>
+            <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+              Passport: {passport.activation_status}
+            </span>
+          </div>
+          <h1 className="mt-4 text-2xl font-bold text-slate-950">Task Passport review</h1>
+          <p className="mt-2 text-sm text-slate-600">{task.purpose}</p>
+        </section>
+
+        <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-6">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-600">Backend-generated policy</h2>
+          <p className="text-sm text-slate-600">
+            Deterministic local MVP Passport, version {passport.version}. Policy choices are compiled by the backend;
+            the UI does not generate signatures or independently decide permissions.
+          </p>
+          <div>
+            <p className="text-xs font-semibold text-emerald-800">Allowed</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {passport.allowed_tools.map((tool) => (
+                <span key={tool} className="rounded border border-emerald-200 bg-emerald-50 px-2 py-1 font-mono text-xs text-emerald-900">{tool}</span>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-rose-800">Forbidden</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {passport.forbidden_tools.map((tool) => (
+                <span key={tool} className="rounded border border-rose-200 bg-rose-50 px-2 py-1 font-mono text-xs text-rose-900">{tool}</span>
+              ))}
+            </div>
+          </div>
+          <div className="grid gap-3 border-t border-slate-100 pt-4 text-xs text-slate-600 sm:grid-cols-2">
+            <p>Data is synthetic only: <strong>{passport.data_policy.synthetic_data_only ? 'Yes' : 'No'}</strong></p>
+            <p>External transmission: <strong>{passport.data_policy.external_transmission}</strong></p>
+            <p>Destructive operations: <strong>{passport.data_policy.destructive_operations}</strong></p>
+            <p>Expires: <strong>{new Date(passport.expires_at).toLocaleString()}</strong></p>
+          </div>
+        </section>
+
+        {error && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
+        <div className="flex flex-wrap gap-3">
+          {passport.activation_status === 'DRAFT' && (
+            <button
+              disabled={working}
+              onClick={() => void handleActivate()}
+              className="rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              {working ? 'Activating...' : 'Activate Passport'}
+            </button>
+          )}
+          {passport.activation_status === 'ACTIVE' && (
+            <button
+              disabled={working}
+              onClick={() => void handleStartSession()}
+              className="rounded-lg bg-emerald-700 px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              {working ? 'Starting...' : 'Start governed session'}
+            </button>
+          )}
+          <Link href="/app/audit" className="rounded-lg border border-slate-300 px-4 py-2.5 text-xs font-semibold text-slate-700">
+            View audit events
+          </Link>
+        </div>
+      </div>
+    </ConsoleLayout>
+  );
+};
+
+const MockPassportReview: React.FC = () => {
+  const { params } = useRouter();
   const { tasks } = useGovernance();
   const [copiedHash, setCopiedHash] = useState(false);
 
@@ -27,6 +190,7 @@ export const PassportReviewPage: React.FC = () => {
   const task = tasks.find(t => t.id === taskId) || tasks[0];
 
   const passport = task.passport;
+  if (!passport) return null;
 
   const handleCopyHash = () => {
     navigator.clipboard.writeText(passport.policyHash);
