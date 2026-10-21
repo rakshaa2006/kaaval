@@ -1,0 +1,6 @@
+{
+  "name": "Kaaval - AI Agent Security & Governance Console",
+  "description": "Deterministic runtime governance, cryptographically signed Task Passports, and Sentinel Quarantine for autonomous AI agents.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
