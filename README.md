@@ -54,19 +54,15 @@ Kaaval places a controlled execution layer between an AI agent and the systems i
 
 ```mermaid
 flowchart TD
-    A["🤖 Agent requests an action"] --> B["🔎 Kaaval identifies task and context"]
-    B --> C["🛂 Passport checks permissions and constraints"]
-    C --> D{"⚖️ Action evaluated"}
-    D -->|Within scope| E["✅ ALLOW"]
-    D -->|Violates a rule| F["⛔ BLOCK"]
-    E --> I[("📜 Audit log")]
-    F --> I
-    F -->|Severe unsafe action| H["🚨 QUARANTINE + INCIDENT"]
-    H --> I
-
-    style E fill:#d1fae5,stroke:#059669,color:#065f46
-    style F fill:#fee2e2,stroke:#dc2626,color:#991b1b
-    style H fill:#fecaca,stroke:#b91c1c,color:#7f1d1d
+    Agent["Agent requests an action"] --> Context["Kaaval identifies task and context"]
+    Context --> Passport["Active Passport checks permissions and constraints"]
+    Passport --> Decision{"Action allowed?"}
+    Decision -->|Yes| Allow["ALLOW"]
+    Decision -->|No| Block["BLOCK"]
+    Allow --> Audit["Audit log"]
+    Block --> Audit
+    Block -->|Severe unsafe action| Quarantine["Quarantine session and create incident"]
+    Quarantine --> Audit
 ```
 
 ### MVP enforcement outcomes
