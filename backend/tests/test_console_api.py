@@ -15,7 +15,14 @@ def authenticate(client, db_session) -> None:
 
 
 def test_frontend_origins_support_credentialed_cors(client) -> None:
-    for origin in ("http://localhost:3000", "http://localhost:5173"):
+    for origin in (
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ):
         response = client.options(
             "/api/auth/me",
             headers={
