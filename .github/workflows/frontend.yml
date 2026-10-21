@@ -3,11 +3,13 @@ name: Frontend CI
 on:
   push:
     paths:
+      - "backend/**"
       - "frontend/**"
       - "README.md"
       - ".github/workflows/frontend.yml"
   pull_request:
     paths:
+      - "backend/**"
       - "frontend/**"
       - "README.md"
       - ".github/workflows/frontend.yml"

@@ -40,7 +40,7 @@ The API will be available at http://localhost:8000
 The React/Vite frontend runs at http://localhost:5173. Its
 `frontend/.env.local` should contain `VITE_API_BASE_URL=http://localhost:8000`.
 Credentialed CORS is enabled for localhost and 127.0.0.1 on ports 3000 and
-5173 for local development only.
+5173 and 5174 for local development only.
 
 - Liveness: http://localhost:8000/api/health
 - Readiness (checks SQLite connectivity): http://localhost:8000/api/ready
